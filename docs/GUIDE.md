@@ -81,12 +81,15 @@ npm run dev
 - **ساعة Google**: يعطي Google التطبيق إذناً لساعة. بعدها يظهر شريط «متابعة»: ضغطة واحدة. لا يضيع شيء في الأثناء، فكل ما تضيفه ينتظر على الجهاز.
 
 ### أ. معرّف Google (مرة واحدة، مجاناً، دون بطاقة دفع)
+> **تمّ في 13 نوفمبر 2026**: مشروع **khizana** (`khizana-514621`) في Google Cloud، شاشة الإذن «خزانة» **منشورة** (En production) بالصلاحيتين وحدهما، والمعرّف «khizana web» مبني في التطبيق المنشور. فلا تحتاج لصق أي شيء: اذهب مباشرة إلى «ب». الخطوات أدناه للمرجع، أو لإعادة إنشائه. قد يتأخر Google من 5 دقائق إلى بضع ساعات في تطبيق الإعداد الجديد: إن رفض الدخول في البداية فأعد المحاولة لاحقاً.
+
 1. افتح **console.cloud.google.com** بحسابك الذي فيه Google One، ثم **New project** (الاسم: khizana).
 2. **APIs & Services ← Library**: ابحث عن **Google Drive API** ← **Enable**.
 3. **Google Auth Platform** (أو **OAuth consent screen**) ← **Get started**:
    - App name: خزانة، والبريد: بريدك.
    - Audience: **External**.
-   - ثم في **Audience** اضغط **Publish app** (التطبيق لا يطلب إلا صلاحيتين بسيطتين).
+   - في **Branding**: الصفحة الرئيسية `https://mykhizana.github.io/khizana/`، وصفحة الخصوصية `https://mykhizana.github.io/khizana/privacy.html`، والنطاق المأذون `mykhizana.github.io`. بدونها لا يقبل Google نشر التطبيق.
+   - ثم في **Audience** اضغط **Publish app** (التطبيق لا يطلب إلا صلاحيتين بسيطتين، ودون شعار، فلا يحتاج مراجعة من Google).
 4. **Data Access ← Add or remove scopes**: أضف `.../auth/drive.file` و`.../auth/drive.appdata` ← Save.
 5. **Clients ← Create client** ← النوع **Web application**:
    - **Authorized JavaScript origins**: `https://mykhizana.github.io` (العنوان المنشور، دون مسار)، و`http://localhost:5177` إن أردت التجربة على الحاسوب.
@@ -95,7 +98,7 @@ npm run dev
 6. ضعه مرة واحدة في GitHub ليُبنى مع التطبيق فلا تلصقه في كل جهاز: **github.com/mykhizana/khizana ← Settings ← Secrets and variables ← Actions ← Variables ← New repository variable**، الاسم `GOOGLE_CLIENT_ID` والقيمة المعرّف، ثم **Actions ← Test and deploy to GitHub Pages ← Run workflow**. (أو الصقه في **الإعدادات ← Google Drive** في كل جهاز.)
 
 ### ب. ربط الجهاز الأول (الحاسوب)
-1. **الإعدادات ← Google Drive**: الصق المعرّف ← حفظ ← **اربط Google Drive**.
+1. افتح **https://mykhizana.github.io/khizana/** في متصفحك المعتاد على الحاسوب، ثم **الإعدادات ← Google Drive ← اربط Google Drive** (المعرّف مبني في التطبيق).
 2. في نافذة Google اختر حسابك، وفعّل **المربعين** (الملفات التي ينشئها التطبيق، وبياناته المخفية). إن ظهر «Google لم يتحقق من هذا التطبيق» فهو تطبيقك أنت: **متقدم ← الانتقال إلى خزانة**.
 3. «إنشاء أرشيفك في Drive» ← **ابدأ**. يُرفع كل شيء في الخلفية، وترى العداد في الإعدادات.
 
