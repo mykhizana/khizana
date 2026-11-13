@@ -59,13 +59,13 @@ function QueueCard() {
   const q = useQueue()
   // without a Claude key the approximate classifier works: no model to show
   const claude = useAiMode().data === 'claude'
-  if (!q.running.length && !q.pending && !q.paused) return null
+  if (!q.running.length && !q.pending && !q.paused && !q.failed.length) return null
   return (
     <div className="rounded-2xl border border-line bg-surface-2 p-3 text-xs">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="inline-flex items-center gap-1.5 font-semibold text-ink">
           <Sparkles className={cn('size-3.5 text-brass-500', q.running.length && 'animate-pulse')} />
-          {q.paused ? 'المعالجة متوقفة' : `يعالج ${q.pending || q.running.length} وثيقة`}
+          {q.paused ? 'المعالجة متوقفة' : q.pending || q.running.length ? `يعالج ${q.pending || q.running.length} وثيقة` : 'المعالجة'}
         </span>
         {q.paused ? (
           <IconButton icon={Play} label="استئناف" size="sm" onClick={() => queue.resume()} />
@@ -75,6 +75,16 @@ function QueueCard() {
       </div>
       {q.message && <p className="mb-2 leading-relaxed text-warning">{q.message}</p>}
       {claude && q.economy && !q.paused && <p className="mb-2 leading-relaxed text-muted">يقرؤها Sonnet 5.5 بنصف الثمن</p>}
+      {q.failed.length > 0 && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-danger-bg px-2 py-1.5 text-danger">
+          <Link to={`/doc/${q.failed[0]}`} className="min-w-0 truncate hover:underline">
+            تعذّرت معالجة {q.failed.length === 1 ? 'وثيقة' : `${q.failed.length} وثائق`}
+          </Link>
+          <button type="button" className="shrink-0 font-semibold hover:underline" onClick={() => void queue.retry(q.failed)}>
+            أعد المحاولة
+          </button>
+        </div>
+      )}
       <div className="space-y-2">
         {q.running.map((j) => (
           <Link key={j.id} to={`/doc/${j.id}`} className="block">

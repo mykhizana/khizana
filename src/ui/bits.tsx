@@ -93,6 +93,20 @@ export function CatPath({ path, className, link = true }: { path: PathItem[] | n
   )
 }
 
+/** why a document waits or failed, in words (the queue stores a short code or the error message) */
+export function stateReason(state: string, detail?: string | null): string | null {
+  if (!detail || (state !== 'error' && state !== 'waiting')) return null
+  const words: Record<string, string> = {
+    budget: 'بلغت تكلفة هذا الشهر السقف الذي حددته في الإعدادات',
+    credit: 'نفد رصيد Claude API في حسابك',
+    network: 'لا اتصال بالإنترنت',
+    rate: 'ضغط مؤقت على خدمة Claude، تُعاد المحاولة وحدها',
+    files: 'صور صفحاتها ما تزال على جهازك الآخر، وتُقرأ حين تصل إلى Drive',
+    auth: 'مفتاح Claude غير صالح أو غير مضاف',
+  }
+  return words[detail] ?? detail
+}
+
 export function StateBadge({ state, detail }: { state: string; detail?: string | null }) {
   if (state === 'ready') return null
   const tone = state === 'error' ? 'danger' : state === 'waiting' ? 'warning' : state === 'review' ? 'brass' : 'info'
@@ -161,6 +175,11 @@ export function DocRow({ d, tokens = [], query, selected, onSelect, extra }: { d
         ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <StateBadge state={d.state} detail={d.state_detail} />
+          {d.state === 'error' && stateReason(d.state, d.state_detail) && (
+            <span dir="auto" className="min-w-0 max-w-full truncate text-xs text-danger">
+              {stateReason(d.state, d.state_detail)}
+            </span>
+          )}
           {d.proposal_name && <Badge tone="brass">رف مقترح: {d.proposal_name}</Badge>}
           {d.location && (
             <Badge icon={MapPin} tone="neutral">

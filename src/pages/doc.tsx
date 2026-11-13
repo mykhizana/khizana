@@ -7,6 +7,7 @@ import {
   Check,
   Download,
   Eye,
+  FileWarning,
   EyeOff,
   FolderInput,
   Heart,
@@ -37,7 +38,7 @@ import { DOC_TYPES, ID_LABELS, METHOD_LABEL, RELATION_LABEL, SENSITIVITY_LABEL, 
 import { useDoc } from '@/lib/queries'
 import type { Doc } from '@/lib/types'
 import { queue } from '@/pipeline/queue'
-import { CatPath, StateBadge } from '@/ui/bits'
+import { CatPath, StateBadge, stateReason } from '@/ui/bits'
 import { downloadDoc } from '@/ui/download'
 import { Badge, Button, Card, Dialog, Field, IconButton, Input, Menu, MenuItem, Select, Skeleton, Textarea, cn } from '@/ui/kit'
 import { CategoryPicker, LocationPicker } from '@/ui/pickers'
@@ -327,6 +328,29 @@ export default function DocPage() {
       </div>
 
       {doc.proposal && <ProposalBanner doc={doc} />}
+      {!doc.deleted_at && stateReason(doc.state, doc.state_detail) && (
+        <Card className={cn('mb-4 flex flex-wrap items-center gap-3 p-4', doc.state === 'error' ? 'border-danger/30 bg-danger-bg' : 'border-warning/30 bg-warning-bg')}>
+          <FileWarning className={cn('size-5 shrink-0', doc.state === 'error' ? 'text-danger' : 'text-warning')} />
+          <span dir="auto" className={cn('min-w-0 flex-1 text-sm leading-relaxed', doc.state === 'error' ? 'text-danger' : 'text-warning')}>
+            {doc.state === 'error' ? 'لم تكتمل معالجتها بعد ثلاث محاولات: ' : 'تنتظر: '}
+            {stateReason(doc.state, doc.state_detail)}
+          </span>
+          {doc.state === 'error' && (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={RefreshCw}
+              onClick={async () => {
+                await queue.retry([doc.id], { opus: true })
+                toast.success('ستُعاد معالجتها بـ Claude Opus 5.5')
+                await refresh()
+              }}
+            >
+              أعد المحاولة
+            </Button>
+          )}
+        </Card>
+      )}
       {doc.reviews.length > 0 && (
         <Card className="mb-4 flex flex-wrap items-center gap-3 border-brass-200 bg-brass-100/50 p-4">
           <HelpCircle className="size-5 text-brass-600" />

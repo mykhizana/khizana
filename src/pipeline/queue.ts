@@ -21,6 +21,8 @@ export type QueueSnapshot = {
   leader: boolean
   /** new documents are read by Sonnet 5.5 (a big import in «auto», or the «Sonnet» setting) */
   economy: boolean
+  /** documents that failed three times (their reason is on their page) */
+  failed: string[]
 }
 
 const CONCURRENCY = 2
@@ -29,7 +31,7 @@ const WORKER = `w-${crypto.randomUUID().slice(0, 8)}`
 class Queue {
   private running = new Map<string, Job>()
   private listeners = new Set<() => void>()
-  private snap: QueueSnapshot = { running: [], pending: 0, paused: null, message: null, lastDone: 0, leader: false, economy: false }
+  private snap: QueueSnapshot = { running: [], pending: 0, paused: null, message: null, lastDone: 0, leader: false, economy: false, failed: [] }
   private kicking = false
   private again = false
   private failures = new Map<string, number>()
@@ -108,7 +110,7 @@ class Queue {
       }
     }
     this.wave = economyWave({ mode: this.mode, wave: this.wave, busy: waiting + this.running.size })
-    this.emit({ pending: waiting, economy: this.mode === 'sonnet' || this.wave })
+    this.emit({ pending: waiting, economy: this.mode === 'sonnet' || this.wave, failed: pending.filter((p) => p.state === 'error').map((p) => p.id) })
     if (this.snap.paused || !this.leader) return
     const now = Date.now()
     for (const p of pending) {
