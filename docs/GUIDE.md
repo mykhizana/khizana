@@ -34,6 +34,8 @@ npm run dev
 
 ثم افتح `http://localhost:5177/khizana/`. كل شيء يُحفظ في المتصفح على هذا الجهاز (قاعدة بيانات Postgres حقيقية داخل المتصفح)، ثم في Google Drive بعد ربطه (الفقرة 5).
 
+**أو دون أي تثبيت**: التطبيق منشور على **https://yassir1778.github.io/khizana/**، فافتحه من الحاسوب والهاتف معاً. المنشور هو الكود وحده؛ وثائقك تبقى على أجهزتك وفي Drive الخاص بك. ولكل عنوان نسخته في المتصفح: ما تضيفه في `localhost` لا يظهر في العنوان المنشور، والعكس، ويجمع Google Drive بينهما.
+
 > قبل ربط Claude يعمل التطبيق «بتصنيف تقريبي»: قواعد بسيطة تُظهر كل الميزات، لكنه لا يقرأ الصور الممسوحة.
 
 ### ربط Claude Opus 5.5
@@ -87,9 +89,10 @@ npm run dev
    - ثم في **Audience** اضغط **Publish app** (التطبيق لا يطلب إلا صلاحيتين بسيطتين).
 4. **Data Access ← Add or remove scopes**: أضف `.../auth/drive.file` و`.../auth/drive.appdata` ← Save.
 5. **Clients ← Create client** ← النوع **Web application**:
-   - **Authorized JavaScript origins**: عنوان فتح التطبيق دون مسار، مثل `http://localhost:5177`، ولاحقاً عنوان النسخة المنشورة مثل `https://اسمك.github.io`.
-   - **Authorized redirect URIs**: العنوان نفسه مع `/khizana/`، مثل `http://localhost:5177/khizana/` و`https://اسمك.github.io/khizana/`.
+   - **Authorized JavaScript origins**: `https://yassir1778.github.io` (العنوان المنشور، دون مسار)، و`http://localhost:5177` إن أردت التجربة على الحاسوب.
+   - **Authorized redirect URIs**: `https://yassir1778.github.io/khizana/`، و`http://localhost:5177/khizana/`.
    - **Create**، ثم انسخ **Client ID** (ينتهي بـ `apps.googleusercontent.com`). هذا المعرّف ليس سراً، ولا تحتاج «Client secret».
+6. ضعه مرة واحدة في GitHub ليُبنى مع التطبيق فلا تلصقه في كل جهاز: مستودع **khizana ← Settings ← Secrets and variables ← Actions ← Variables ← New repository variable**، الاسم `GOOGLE_CLIENT_ID` والقيمة المعرّف، ثم **Actions ← Test and deploy to GitHub Pages ← Run workflow**. (أو الصقه في **الإعدادات ← Google Drive** في كل جهاز.)
 
 ### ب. ربط الجهاز الأول (الحاسوب)
 1. **الإعدادات ← Google Drive**: الصق المعرّف ← حفظ ← **اربط Google Drive**.
@@ -97,7 +100,7 @@ npm run dev
 3. «إنشاء أرشيفك في Drive» ← **ابدأ**. يُرفع كل شيء في الخلفية، وترى العداد في الإعدادات.
 
 ### ج. ربط الهاتف
-1. افتح التطبيق على الهاتف من عنوانه المنشور (https: يشترطه Google للدخول)، ثم **الإعدادات ← Google Drive ← اربط**.
+1. افتح **https://yassir1778.github.io/khizana/** على الهاتف (عنوان https: يشترطه Google للدخول)، ثم **الإعدادات ← Google Drive ← اربط**.
 2. «وجدنا أرشيفك في Drive» ← **ابدأ**: يُنزَّل الفهرس، وتظهر كل وثائقك.
 3. أضف التطبيق إلى الشاشة الرئيسية. على iPhone، إن لم تُفتح نافذة Google فاستعمل «الدخول بطريقة أخرى».
 4. الصق مفتاح Claude في الهاتف أيضاً إن أردت أن يقرأ الهاتف ما تمسحه فوراً.
@@ -145,12 +148,14 @@ npm run test:drive  # محرك Drive كاملاً مع نسخة تجريبية �
 npm run build
 ```
 
+وتُشغَّل هذه الفحوص كلها في GitHub قبل كل نشر (`.github/workflows/deploy.yml`): إن فشل واحد منها لا يُنشر شيء، ويبقى العنوان على النسخة السابقة.
+
 تجربة جهازين على الحاسوب دون حساب Google: `npm run fake-drive`، ثم `npx vite --mode fakedrive --port 5181` و`--port 5182` (ملف `.env.fakedrive`: `VITE_DRIVE_API=http://127.0.0.1:5199` و`VITE_DRIVE_FAKE=1`).
 
 ---
 
 ## 9. المراحل القادمة
 
-- **التالي مباشرة**: المعالجة الاقتصادية بنصف الثمن (Batch API) للاستيرادات الكبيرة، ثم نشر التطبيق على GitHub Pages ليُفتح من الهاتف.
+- **التالي مباشرة**: المعالجة الاقتصادية بنصف الثمن (Batch API) للاستيرادات الكبيرة.
 - **المرحلة 2**: «اسأل خزانتك» (أسئلة تجيب من وثائقك مع الإحالة إلى الصفحة)، رادار الآجال بإشعارات الهاتف، الملف الجاهز للإدارة وروابط المشاركة الآمنة، رابط الإيداع للعائلة.
 - **المرحلة 3**: كاشف النواقص، مساعد البحث العلمي (المراجع بصيغتك وفهرس النصوص القانونية)، بريد الأرشيف، الخريطة وشبكة العلاقات.
