@@ -176,5 +176,60 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('no credit, no internet, rate limit, server error, bad key → the usual handling (no switch)', [{ kind: 'credit', status: 400 }, { kind: 'network' }, { kind: 'rate', status: 429 }, { kind: 'server', status: 500 }, { kind: 'auth', status: 401 }].every((e) => sonnetFallback(e) === null))
 }
 
+// ------------------------------------------------------------ structured-output schemas stay small (Anthropic refuses big grammars)
+{
+  const S = await import('../src/ai/schemas.ts')
+  const { UNDERSTAND_SYSTEM } = await import('../src/ai/prompts.ts')
+  const { normalizeCard, normalizeQuery } = await import('../src/ai/normalize.ts')
+  const { DOC_TYPE_KEYS, PERSON_ROLES, ORG_KINDS, ID_KINDS } = await import('../src/lib/labels.ts')
+  const measure = (schema) => {
+    const m = { unions: 0, optional: 0, enums: 0, biggestEnum: 0, objectsOk: true }
+    const walk = (n) => {
+      if (!n || typeof n !== 'object') return
+      if (Array.isArray(n)) return n.forEach(walk)
+      if (n.anyOf || Array.isArray(n.type)) m.unions++
+      if (n.enum) { m.enums++; m.biggestEnum = Math.max(m.biggestEnum, n.enum.length) }
+      if (n.type === 'object') {
+        const keys = Object.keys(n.properties ?? {})
+        m.optional += keys.filter((k) => !(n.required ?? []).includes(k)).length
+        if (n.additionalProperties !== false) m.objectsOk = false
+      }
+      Object.values(n).forEach(walk)
+    }
+    walk(schema)
+    return m
+  }
+  const all = ['UNDERSTAND_SCHEMA', 'TRANSCRIBE_SCHEMA', 'SPLIT_SCHEMA', 'JUDGE_SCHEMA', 'QUERY_SCHEMA'].map((k) => [k, measure(S[k])])
+  ok('schemas: no union type anywhere (they make the grammar explode)', all.every(([, m]) => m.unions === 0), JSON.stringify(all.map(([k, m]) => [k, m.unions])))
+  ok('schemas: every property required, every object closed', all.every(([, m]) => m.optional === 0 && m.objectsOk))
+  ok('schemas: understand and query carry no enum at all', measure(S.UNDERSTAND_SCHEMA).enums === 0 && measure(S.QUERY_SCHEMA).enums === 0)
+  ok('schemas: the small ones keep only short enums (≤ 8 values)', all.every(([, m]) => m.biggestEnum <= 8))
+  ok('prompt: the allowed values moved into the instructions', [...DOC_TYPE_KEYS, ...PERSON_ROLES, ...ORG_KINDS, ...ID_KINDS].every((v) => UNDERSTAND_SYSTEM.includes(v)) && UNDERSTAND_SYSTEM.includes('never null'))
+
+  const card = normalizeCard({
+    doc_type: 'ID_Document', title: ' Pasaporte ', title_ar: 'جواز السفر', summary_ar: 'ملخص', languages: ['ES', 'ar', 'de', 'ar'],
+    category: { existing_id: '', proposal: { parent_id: '', name_ar: 'وثائق السفر', name_fr: 'Voyage', name_es: 'Viaje', name_en: 'Travel', reason_ar: 'سبب' }, confidence: 1.7 },
+    people: [{ name_ar: 'ياسر', name_latin: 'Yassir', honorific: '', role: 'Holder', as_written: 'YASSIR' }, { name_ar: '', name_latin: '', honorific: '', role: 'author', as_written: '' }, { name_ar: 'سلمى', name_latin: 'Salma', honorific: 'null', role: 'doctor', as_written: '' }],
+    organizations: [{ name: 'Consulado', name_latin: 'Consulado General', kind: 'Consulate', city: '' }],
+    places: [{ name_ar: 'تطوان', name_latin: 'Tetuán', country: 'MA', role: 'issue place' }],
+    dates: { document_date: '2025-07-29', precision: 'Day', academic_year: '', period_start: '', period_end: 'none', expiry_date: '2030-01-01' },
+    identifiers: [{ kind: 'Passport No', value: 'X1' }, { kind: 'id_no', value: '' }, { kind: 'weird', value: 'R-9' }],
+    status: { is_copy: true, certified_copy: false, apostille: 'yes', sworn_translation: false, translated_from: '' },
+    sensitivity: 'VAULT', keywords: { ar: [' جواز ', 'جواز', ''], fr: ['passeport'], es: [], en: ['passport'] }, visual_features: 'ختم أزرق',
+    deadlines: [{ date: '2030-01-01', title_ar: 'تجديد الجواز' }, { date: '', title_ar: 'بلا تاريخ' }], reason_ar: 'لأنه جواز', confidence: 'x',
+  })
+  ok('normalize: case-insensitive values (ID_Document, Holder, Consulate, issue place, Passport No, Day, VAULT)', card.doc_type === 'id_document' && card.people[0].role === 'holder' && card.organizations[0].kind === 'consulate' && card.places[0].role === 'issue_place' && card.identifiers[0].kind === 'passport_no' && card.dates.precision === 'day' && card.sensitivity === 'vault')
+  ok('normalize: "" (and "null", "none") become null', card.category.existing_id === null && card.people[0].honorific === null && card.people[1].honorific === null && card.organizations[0].city === null && card.dates.academic_year === null && card.dates.period_end === null && card.status.translated_from === null && card.category.proposal.parent_id === null)
+  ok('normalize: unknown values fall back safely', card.people[1].role === 'mentioned' && card.identifiers[1].kind === 'other' && card.languages.join() === 'es,ar,other')
+  ok('normalize: empty people, identifiers and deadlines are dropped', card.people.length === 2 && card.identifiers.length === 2 && card.deadlines.length === 1)
+  ok('normalize: trimmed, de-duplicated keywords; clamped confidences; booleans only when true', card.title === 'Pasaporte' && card.keywords.ar.join() === 'جواز' && card.category.confidence === 1 && card.confidence === 0.5 && card.status.is_copy === true && card.status.apostille === false)
+  const none = normalizeCard({ doc_type: 'contract', category: { existing_id: 'abc', proposal: { parent_id: '', name_ar: '', name_fr: '', name_es: '', name_en: '', reason_ar: '' }, confidence: 0.8 } })
+  ok('normalize: a proposal with no name is no proposal; the chosen shelf is kept', none.category.proposal === null && none.category.existing_id === 'abc' && none.doc_type === 'contract')
+  const junk = normalizeCard(null)
+  ok('normalize: a missing answer still gives a complete card', junk.doc_type === 'other' && Array.isArray(junk.people) && junk.dates.document_date === null && junk.sensitivity === 'normal' && Array.isArray(junk.keywords.fr))
+  const q = normalizeQuery({ text: 'محاضرات', doc_types: ['Lecture', 'spaceship'], category_ids: ['c1', ''], person_names: ['بنعلي'], year_from: 2018, year_to: 0, languages: ['FR', 'de'], sensitivity: '' })
+  ok('normalize query: 0 → no year, "" → no sensitivity, unknown types and languages dropped', q.year_from === 2018 && q.year_to === null && q.sensitivity === null && q.doc_types.join() === 'lecture' && q.languages.join() === 'fr' && q.category_ids.join() === 'c1')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

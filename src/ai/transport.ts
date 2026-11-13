@@ -159,8 +159,11 @@ export async function send<T>(op: string, params: AiParams, opts: { documentId?:
     } catch (e) {
       const next = model !== MODEL && e instanceof AiError ? sonnetFallback(e) : null
       if (next === 'opus_off') {
+        // Opus reads it; Sonnet is set aside for this session only if Opus succeeds where it failed
+        // (a refused schema, for instance, fails on both and is not Sonnet's fault)
+        const r = await again()
         economyOff = e instanceof Error ? e.message : String(e)
-        return again()
+        return r
       }
       throw e
     }

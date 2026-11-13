@@ -5,6 +5,7 @@ import type { AiCard, Category } from '@/lib/types'
 import { blobToBase64 } from '@/prep/image'
 import { JUDGE_SYSTEM, SPLIT_SYSTEM, TRANSCRIBE_SYSTEM, UNDERSTAND_SYSTEM, querySystem, taxonomyBlock } from './prompts'
 import { JUDGE_SCHEMA, QUERY_SCHEMA, SPLIT_SCHEMA, TRANSCRIBE_SCHEMA, UNDERSTAND_SCHEMA } from './schemas'
+import { normalizeCard, normalizeQuery } from './normalize'
 import { normaliseSegments } from './segments'
 import { send } from './transport'
 
@@ -87,7 +88,7 @@ export async function understand(input: UnderstandInput): Promise<{ card: AiCard
       (input.images.length ? `The first page image(s) are attached for the layout, stamps and logos.\n` : '') +
       (text ? `\nText of the document:\n${text}` : '\n(No text could be extracted; rely on the image and the file name.)'),
   })
-  const r = await send<AiCard>(
+  const r = await send<unknown>(
     'understand',
     {
       system: [
@@ -100,7 +101,8 @@ export async function understand(input: UnderstandInput): Promise<{ card: AiCard
     },
     { documentId: input.documentId, model: input.model, estimate: estimateCost({ images: Math.min(2, input.images.length), chars: text.length, outTokens: 2500, model: input.model }) },
   )
-  return { card: r.data, model: r.model }
+  // the schema is loose on purpose (schemas.ts): the answer is checked and completed here
+  return { card: normalizeCard(r.data), model: r.model }
 }
 
 // ------------------------------------------------------------------ 3. one scanned stack → several documents
@@ -151,7 +153,7 @@ export type ParsedQuery = {
 }
 
 export async function parseQuery(q: string, categories: Category[]): Promise<ParsedQuery> {
-  const r = await send<ParsedQuery>(
+  const r = await send<unknown>(
     'query',
     {
       system: [{ type: 'text', text: querySystem(categories), cache_control: { type: 'ephemeral' } }],
@@ -162,5 +164,6 @@ export async function parseQuery(q: string, categories: Category[]): Promise<Par
     { estimate: estimateCost({ chars: 3000, outTokens: 300 }) },
   )
   const ids = new Set(categories.map((c) => c.id))
-  return { ...r.data, category_ids: r.data.category_ids.filter((x) => ids.has(x)) }
+  const parsed = normalizeQuery(r.data)
+  return { ...parsed, category_ids: parsed.category_ids.filter((x) => ids.has(x)) }
 }
