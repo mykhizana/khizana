@@ -150,5 +150,31 @@ ok('cost: batch is half price', Math.abs(costOf('claude-opus-5-5', { input_token
 ok('estimate: a 4-page scan costs a few cents', estimateCost({ images: 4, outTokens: 7200 }) < 0.2)
 ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واحدة|وثيقتان|5 وثائق|12 وثيقة')
 
+// ------------------------------------------------------------ who reads a document (Opus / Sonnet)
+{
+  const { OPUS, SONNET, ECONOMY_FROM, economyWave, pickModel, readingMode, modelName, isSonnet, sonnetFallback } = await import('../src/ai/models.ts')
+  ok('models: readable names', modelName('claude-opus-5-5') === 'Claude Opus 5.5' && modelName('claude-sonnet-5-5') === 'Claude Sonnet 5.5' && modelName('claude-opus-4-8') === 'Claude Opus 4.8' && modelName(null) === 'Claude')
+  ok('models: unknown or missing setting is «auto»', readingMode(undefined) === 'auto' && readingMode('fast') === 'auto' && readingMode('sonnet') === 'sonnet' && readingMode('opus') === 'opus')
+  // «auto»: one document → Opus
+  let w = economyWave({ mode: 'auto', wave: false, busy: 1 })
+  ok('auto: a single document is read by Opus', !w && pickModel({ mode: 'auto', wave: w }) === OPUS)
+  ok('auto: four documents are still read by Opus', !economyWave({ mode: 'auto', wave: false, busy: ECONOMY_FROM - 1 }))
+  // a big import → Sonnet until the line is empty
+  w = economyWave({ mode: 'auto', wave: false, busy: ECONOMY_FROM })
+  ok(`auto: ${ECONOMY_FROM} in line start an economy wave read by Sonnet`, w && pickModel({ mode: 'auto', wave: w }) === SONNET)
+  w = economyWave({ mode: 'auto', wave: w, busy: 2 })
+  ok('auto: the wave lasts while documents remain (the end of the import stays with Sonnet)', w && pickModel({ mode: 'auto', wave: w }) === SONNET)
+  w = economyWave({ mode: 'auto', wave: w, busy: 0 })
+  ok('auto: the wave ends when the line is empty; the next single document → Opus', !w && pickModel({ mode: 'auto', wave: economyWave({ mode: 'auto', wave: w, busy: 1 }) }) === OPUS)
+  ok('«read again» is always Opus, even in a wave or with «Sonnet always»', pickModel({ mode: 'auto', wave: true, opus: true }) === OPUS && pickModel({ mode: 'sonnet', wave: false, opus: true }) === OPUS)
+  ok('«Opus always» / «Sonnet always»', pickModel({ mode: 'opus', wave: true }) === OPUS && pickModel({ mode: 'sonnet', wave: false }) === SONNET && !economyWave({ mode: 'sonnet', wave: false, busy: 50 }))
+  ok('isSonnet', isSonnet(SONNET) && isSonnet('claude-sonnet-5-5-20261001') && !isSonnet(OPUS) && !isSonnet(null))
+  ok('cost: Sonnet 5.5 is exactly half of Opus 5.5', Math.abs(costOf(SONNET, { input_tokens: 1e6, output_tokens: 1e6 }) * 2 - costOf(OPUS, { input_tokens: 1e6, output_tokens: 1e6 })) < 1e-9)
+  ok('estimate follows the model', Math.abs(estimateCost({ images: 4, outTokens: 7200, model: SONNET }) * 2 - estimateCost({ images: 4, outTokens: 7200, model: OPUS })) < 1e-9)
+  ok('Sonnet declined → Opus reads it', sonnetFallback({ kind: 'refusal' }) === 'opus')
+  ok('Sonnet refused / unknown / not allowed (400/404/403) → Opus, and no more Sonnet this session', [400, 404, 403].every((st) => sonnetFallback({ kind: st === 403 ? 'auth' : 'other', status: st }) === 'opus_off'))
+  ok('no credit, no internet, rate limit, server error, bad key → the usual handling (no switch)', [{ kind: 'credit', status: 400 }, { kind: 'network' }, { kind: 'rate', status: 429 }, { kind: 'server', status: 500 }, { kind: 'auth', status: 401 }].every((e) => sonnetFallback(e) === null))
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

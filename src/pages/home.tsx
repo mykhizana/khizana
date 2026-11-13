@@ -144,6 +144,7 @@ export default function Home() {
               </h3>
               <p className="mt-1 text-sm text-muted">
                 <span className="num">{queue.pending}</span> وثيقة تُقرأ وتُصنف الآن. يمكنك متابعة عملك.
+                {ai === 'claude' && queue.economy && ' يقرؤها Claude Sonnet 5.5 بنصف الثمن.'}
               </p>
             </Card>
           )}

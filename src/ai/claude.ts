@@ -1,4 +1,5 @@
-// The five things the archive asks Claude Opus 5.5 to do.
+// The five things the archive asks Claude to do. Opus 5.5 by default; for a big import the queue may
+// pass Sonnet 5.5 (half the price) as `model` — never for search, which stays with Opus.
 import { estimateCost } from '@/lib/cost'
 import type { AiCard, Category } from '@/lib/types'
 import { blobToBase64 } from '@/prep/image'
@@ -16,7 +17,7 @@ async function imageBlock(b: Blob) {
 // ------------------------------------------------------------------ 1. read scanned pages (OCR)
 export type Transcribed = { text: string; blank: boolean; legibility: 'good' | 'partial' | 'poor' }
 
-export async function transcribe(images: Blob[], documentId?: string): Promise<Transcribed[]> {
+export async function transcribe(images: Blob[], documentId?: string, model?: string): Promise<Transcribed[]> {
   const content: unknown[] = []
   for (const b of images) content.push(await imageBlock(b))
   content.push({ type: 'text', text: `Transcribe these ${images.length} page image(s), in order.` })
@@ -28,7 +29,7 @@ export async function transcribe(images: Blob[], documentId?: string): Promise<T
       max_tokens: 32000,
       output_config: { effort: 'low', format: fmt(TRANSCRIBE_SCHEMA) },
     },
-    { documentId, estimate: estimateCost({ images: images.length, outTokens: images.length * 1800 }) },
+    { documentId, model, estimate: estimateCost({ images: images.length, outTokens: images.length * 1800, model }) },
   )
   return images.map((_, i) => {
     const p = r.data.pages.find((x) => x.index === i + 1) ?? r.data.pages[i]
@@ -46,6 +47,8 @@ export type UnderstandInput = {
   pageTexts: string[]
   images: Blob[]
   categories: Category[]
+  /** the Claude that reads it (Opus 5.5 unless the queue chose Sonnet 5.5 for a big import) */
+  model?: string
 }
 
 const EXCERPT = 24_000
@@ -95,13 +98,13 @@ export async function understand(input: UnderstandInput): Promise<{ card: AiCard
       max_tokens: 16000,
       output_config: { effort: 'medium', format: fmt(UNDERSTAND_SCHEMA) },
     },
-    { documentId: input.documentId, estimate: estimateCost({ images: Math.min(2, input.images.length), chars: text.length, outTokens: 2500 }) },
+    { documentId: input.documentId, model: input.model, estimate: estimateCost({ images: Math.min(2, input.images.length), chars: text.length, outTokens: 2500, model: input.model }) },
   )
   return { card: r.data, model: r.model }
 }
 
 // ------------------------------------------------------------------ 3. one scanned stack → several documents
-export async function split(pageTexts: string[], documentId?: string): Promise<{ first_page: number; last_page: number; title_ar: string }[]> {
+export async function split(pageTexts: string[], documentId?: string, model?: string): Promise<{ first_page: number; last_page: number; title_ar: string }[]> {
   const body = pageTexts.map((t, i) => `=== page ${i + 1} ===\n${(t || '(blank)').slice(0, 1200)}`).join('\n\n')
   const r = await send<{ documents: { first_page: number; last_page: number; title_ar: string }[] }>(
     'split',
@@ -111,7 +114,7 @@ export async function split(pageTexts: string[], documentId?: string): Promise<{
       max_tokens: 8000,
       output_config: { effort: 'low', format: fmt(SPLIT_SCHEMA) },
     },
-    { documentId, estimate: estimateCost({ chars: body.length, outTokens: 800 }) },
+    { documentId, model, estimate: estimateCost({ chars: body.length, outTokens: 800, model }) },
   )
   return normaliseSegments(r.data.documents, pageTexts.length)
 }
@@ -120,7 +123,7 @@ export async function split(pageTexts: string[], documentId?: string): Promise<{
 export type Judged = { relation: 'same' | 'better_copy' | 'version' | 'annotated' | 'translation' | 'part' | 'related' | 'different'; confidence: number; reason_ar: string }
 type Side = { title: string; summary: string | null; text: string; languages: string[]; pages: number; image?: Blob | null }
 
-export async function judge(fresh: Side, existing: Side, documentId?: string): Promise<Judged> {
+export async function judge(fresh: Side, existing: Side, documentId?: string, model?: string): Promise<Judged> {
   const content: unknown[] = []
   const describe = (label: string, s: Side) =>
     `${label}\nTitle: ${s.title}\nLanguages: ${s.languages.join(', ') || '?'} · Pages: ${s.pages}\nSummary: ${s.summary ?? '—'}\nText (start):\n${s.text.slice(0, 5000) || '(no text)'}`
@@ -130,7 +133,7 @@ export async function judge(fresh: Side, existing: Side, documentId?: string): P
   const r = await send<Judged>(
     'judge',
     { system: JUDGE_SYSTEM, messages: [{ role: 'user', content }], max_tokens: 6000, output_config: { effort: 'medium', format: fmt(JUDGE_SCHEMA) } },
-    { documentId, estimate: estimateCost({ images: content.length - 1, chars: 10_000, outTokens: 600 }) },
+    { documentId, model, estimate: estimateCost({ images: content.length - 1, chars: 10_000, outTokens: 600, model }) },
   )
   return r.data
 }

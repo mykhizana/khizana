@@ -1,13 +1,27 @@
 // The background worker: documents waiting to be read/understood are processed two at a time,
 // resumed when the app opens again, paused on the monthly cap or without internet.
+// Which Claude reads each one (src/ai/models.ts): Opus 5.5, or Sonnet 5.5 at half the price for a big
+// import (setting «reading_mode»: auto / opus / sonnet). A document the owner asks to read again: Opus.
 // Only ONE tab works (a browser lock), and each document is claimed in the database first,
 // so two tabs or two devices never pay twice for the same document.
 import { api } from '@/db/api'
+import { economyWave, pickModel, readingMode, type ReadingMode } from '@/ai/models'
 import { AiError, BudgetError, resetBudgetCache } from '@/ai/transport'
+import { textHash } from '@/lib/hash'
+import type { Doc } from '@/lib/types'
 import { processDoc } from './process'
 
-export type Job = { id: string; title: string; state: string; detail?: string; ratio?: number }
-export type QueueSnapshot = { running: Job[]; pending: number; paused: null | 'budget' | 'network' | 'manual'; message: string | null; lastDone: number; leader: boolean }
+export type Job = { id: string; title: string; state: string; detail?: string; ratio?: number; model?: string }
+export type QueueSnapshot = {
+  running: Job[]
+  pending: number
+  paused: null | 'budget' | 'network' | 'manual'
+  message: string | null
+  lastDone: number
+  leader: boolean
+  /** new documents are read by Sonnet 5.5 (a big import in «auto», or the «Sonnet» setting) */
+  economy: boolean
+}
 
 const CONCURRENCY = 2
 const WORKER = `w-${crypto.randomUUID().slice(0, 8)}`
@@ -15,12 +29,18 @@ const WORKER = `w-${crypto.randomUUID().slice(0, 8)}`
 class Queue {
   private running = new Map<string, Job>()
   private listeners = new Set<() => void>()
-  private snap: QueueSnapshot = { running: [], pending: 0, paused: null, message: null, lastDone: 0, leader: false }
+  private snap: QueueSnapshot = { running: [], pending: 0, paused: null, message: null, lastDone: 0, leader: false, economy: false }
   private kicking = false
   private again = false
   private failures = new Map<string, number>()
   private cooldown = new Map<string, number>()
   private leader = typeof navigator === 'undefined' || !('locks' in navigator)
+  private mode: ReadingMode = 'auto'
+  private modeAt = 0
+  /** «auto»: the current import is big, Sonnet reads it until the line is empty */
+  private wave = false
+  /** documents the owner asked to read again: Opus, whatever the setting */
+  private opusFor = new Set<string>()
   onDocDone: (id: string) => void = () => {}
 
   constructor() {
@@ -78,7 +98,17 @@ class Queue {
     } catch {
       return
     }
-    this.emit({ pending: pending.filter((p) => p.state !== 'error').length })
+    const waiting = pending.filter((p) => p.state !== 'error').length
+    if (Date.now() - this.modeAt > 15_000) {
+      try {
+        this.mode = readingMode((await api.settings())?.reading_mode)
+        this.modeAt = Date.now()
+      } catch {
+        /* keep the last one */
+      }
+    }
+    this.wave = economyWave({ mode: this.mode, wave: this.wave, busy: waiting + this.running.size })
+    this.emit({ pending: waiting, economy: this.mode === 'sonnet' || this.wave })
     if (this.snap.paused || !this.leader) return
     const now = Date.now()
     for (const p of pending) {
@@ -97,14 +127,16 @@ class Queue {
   }
 
   private start(id: string, title: string) {
-    this.running.set(id, { id, title, state: 'new' })
+    const model = pickModel({ mode: this.mode, wave: this.wave, opus: this.opusFor.has(id) })
+    this.running.set(id, { id, title, state: 'new', model })
     this.emit()
     const report = (state: string, detail?: string, ratio?: number) => {
-      this.running.set(id, { id, title, state, detail, ratio })
+      this.running.set(id, { id, title, state, detail, ratio, model })
       this.emit()
     }
-    processDoc(id, report)
+    processDoc(id, report, model)
       .then(() => {
+        this.opusFor.delete(id)
         this.failures.delete(id)
         this.cooldown.delete(id)
         this.emit({ lastDone: Date.now() })
@@ -141,14 +173,29 @@ class Queue {
       })
   }
 
-  /** put documents back in line (after an error, a new key, or «read again») */
-  async retry(ids: string[]) {
+  /** put documents back in line (after an error, a new key, or «read again»); `opus`: the owner asked for this one */
+  async retry(ids: string[], opts: { opus?: boolean } = {}) {
     for (const id of ids) {
       this.failures.delete(id)
       this.cooldown.delete(id)
+      if (opts.opus) this.opusFor.add(id)
       await api.setState(id, 'new', null)
     }
+    this.modeAt = 0
     this.resume()
+  }
+
+  /**
+   * «Read the pages again with Opus»: the pages Claude read from images are read once more (their
+   * present text stays, and stays searchable, until the new reading replaces it), then the document is
+   * understood again. The owner's corrections are kept.
+   */
+  async rereadWithOpus(d: Doc) {
+    const pages = []
+    for (const p of d.pages.filter((x) => x.text_source === 'ocr'))
+      pages.push({ page_no: p.page_no, text: p.text, text_source: 'reocr', text_hash: await textHash(p.text), legibility: p.legibility ?? undefined, blank: p.blank })
+    if (pages.length) await api.setText({ id: d.id, pages, text_hash: null, text_chars: d.text_chars, minhash: null, lsh: null, needs_ocr: true })
+    await this.retry([d.id], { opus: true })
   }
 }
 

@@ -18,6 +18,7 @@ import {
   Pencil,
   RefreshCw,
   RotateCcw,
+  ScanText,
   Tag,
   Trash2,
   Unlink,
@@ -27,6 +28,7 @@ import {
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
+import { isSonnet, modelName } from '@/ai/models'
 import { api } from '@/db/api'
 import { files } from '@/db/files'
 import { MODE } from '@/lib/config'
@@ -277,13 +279,26 @@ export default function DocPage() {
                   icon={RefreshCw}
                   onClick={async () => {
                     close()
-                    await queue.retry([doc.id])
-                    toast.success('ستُقرأ وتُفهم من جديد (تصحيحاتك محفوظة)')
+                    await queue.retry([doc.id], { opus: true })
+                    toast.success('ستُفهم من جديد بـ Claude Opus 5.5 (تصحيحاتك محفوظة)')
                     await refresh()
                   }}
                 >
                   أعد القراءة والفهم
                 </MenuItem>
+                {isSonnet(doc.ai_model) && doc.pages.some((p) => p.text_source === 'ocr') && (
+                  <MenuItem
+                    icon={ScanText}
+                    onClick={async () => {
+                      close()
+                      await queue.rereadWithOpus(doc)
+                      toast.success('ستُقرأ صفحاتها من جديد بـ Claude Opus 5.5، ويبقى نصها الحالي حتى يُستبدل')
+                      await refresh()
+                    }}
+                  >
+                    اقرأ الصفحات من جديد بـ Opus 5.5
+                  </MenuItem>
+                )}
                 {MODE === 'cloud' && (
                   <MenuItem icon={WifiOff} onClick={() => (close(), toggle('pinned_offline'))}>
                     {doc.pinned_offline ? 'إلغاء الإتاحة بدون إنترنت' : 'متاحة بدون إنترنت'}
@@ -502,7 +517,7 @@ export default function DocPage() {
             </h3>
             <p className="text-sm leading-relaxed text-text">{doc.ai_reason || '—'}</p>
             <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
-              <Badge tone={doc.ai_mode === 'claude' ? 'success' : 'warning'}>{doc.ai_mode === 'claude' ? doc.ai_model ?? 'Claude' : 'تصنيف تقريبي'}</Badge>
+              <Badge tone={doc.ai_mode === 'claude' ? 'success' : 'warning'}>{doc.ai_mode === 'claude' ? modelName(doc.ai_model) : 'تصنيف تقريبي'}</Badge>
               {doc.ai_confidence != null && <Badge>ثقة {Math.round(doc.ai_confidence * 100)}%</Badge>}
               {doc.corrected.length > 0 && <Badge tone="brand">صحّحتَ {doc.corrected.length} حقلاً</Badge>}
             </div>

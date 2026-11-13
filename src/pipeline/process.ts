@@ -21,11 +21,12 @@ function pageImages(d: Doc) {
   return d.files.filter((f) => f.role === 'page').sort((a, b) => (a.page_no ?? 0) - (b.page_no ?? 0))
 }
 
-async function read(d: Doc, report: Report) {
+async function read(d: Doc, report: Report, model?: string) {
   const imgs = pageImages(d)
   const todo = imgs.filter((f) => {
     const pg = d.pages.find((p) => p.page_no === f.page_no)
-    return !pg || (!pg.text && !pg.blank) || pg.text_source === 'none'
+    // «reocr»: the owner asked to read the pages again (with Opus); their old text stays until replaced
+    return !pg || (!pg.text && !pg.blank) || pg.text_source === 'none' || pg.text_source === 'reocr'
   })
   if (!todo.length) return false
   const texts = new Map(d.pages.map((p) => [p.page_no, p.text]))
@@ -50,6 +51,7 @@ async function read(d: Doc, report: Report) {
     const res = await transcribe(
       pairs.map((x) => x.blob),
       d.id,
+      model,
     )
     const batch: { page_no: number; text: string; text_source: string; text_hash: string | null; legibility?: string; blank?: boolean }[] = []
     for (let k = 0; k < pairs.length && k < res.length; k++) {
@@ -92,7 +94,7 @@ async function sideOf(id: string) {
   }
 }
 
-async function applyActions(d: Doc, actions: DupAction[], ai: boolean, report: Report): Promise<'dropped' | void> {
+async function applyActions(d: Doc, actions: DupAction[], ai: boolean, report: Report, model?: string): Promise<'dropped' | void> {
   let judged = 0
   for (const a of actions) {
     if (a.kind === 'drop') {
@@ -116,7 +118,7 @@ async function applyActions(d: Doc, actions: DupAction[], ai: boolean, report: R
       const me = await sideOf(d.id)
       const other = await sideOf(a.other.id)
       if (!me || !other) continue
-      const j = await judge(me.side, other.side, d.id)
+      const j = await judge(me.side, other.side, d.id, model)
       if (j.relation === 'different') continue
       if (j.relation === 'same' || j.relation === 'better_copy') {
         await api.reviewAdd('duplicate', d.id, {
@@ -134,7 +136,8 @@ async function applyActions(d: Doc, actions: DupAction[], ai: boolean, report: R
   }
 }
 
-export async function processDoc(id: string, report: Report): Promise<void> {
+/** `model`: the Claude the queue chose for this document (Opus 5.5 unless a big import goes to Sonnet 5.5) */
+export async function processDoc(id: string, report: Report, model?: string): Promise<void> {
   let d = await api.doc(id)
   if (!d || d.deleted_at) return
   const mode = await aiMode()
@@ -142,7 +145,7 @@ export async function processDoc(id: string, report: Report): Promise<void> {
 
   // 1. read the scanned pages
   if (ai && d.needs_ocr) {
-    if (await read(d, report)) d = (await api.doc(id))!
+    if (await read(d, report, model)) d = (await api.doc(id))!
     if (!d) return
   }
 
@@ -154,6 +157,7 @@ export async function processDoc(id: string, report: Report): Promise<void> {
       segments = await split(
         d.pages.map((p) => p.text),
         d.id,
+        model,
       )
     }
     if (segments.length > 1) {
@@ -175,7 +179,7 @@ export async function processDoc(id: string, report: Report): Promise<void> {
   // 3. duplicates, before spending on understanding
   report('checking', 'فحص التكرار')
   await api.setState(d.id, 'checking')
-  if ((await applyActions(d, decide(meOf(d), await api.dupCandidates(d.id), ai), ai, report)) === 'dropped') return
+  if ((await applyActions(d, decide(meOf(d), await api.dupCandidates(d.id), ai), ai, report, model)) === 'dropped') return
 
   // 4. understand
   report('understanding', ai ? 'Claude يفهم الوثيقة' : 'تصنيف تقريبي')
@@ -189,7 +193,7 @@ export async function processDoc(id: string, report: Report): Promise<void> {
   if (ai && (img || pageTexts.some((t) => t.trim()))) {
     const second = pageImages(d)[1]
     const images = [img, second && d.page_count <= 4 ? await files.get(second.path) : null].filter(Boolean) as Blob[]
-    const r = await understand({ documentId: d.id, fileName: d.file_name ?? '', hint, source: d.source, pageCount: d.page_count, pageTexts, images, categories })
+    const r = await understand({ documentId: d.id, fileName: d.file_name ?? '', hint, source: d.source, pageCount: d.page_count, pageTexts, images, categories, model })
     seal = (await api.applyAi(d.id, r.card, 'claude', r.model)).seal === true
   } else {
     seal = (await api.applyAi(d.id, demoUnderstand({ fileName: d.file_name ?? '', hint, pageTexts, categories }), 'demo')).seal === true
@@ -204,6 +208,7 @@ export async function processDoc(id: string, report: Report): Promise<void> {
       decide(meOf(after), cands, ai).filter((a) => a.kind !== 'ask' || !after.reviews.some((r) => r.kind === 'duplicate' && r.payload.other_id === a.other.id)),
       ai,
       report,
+      model,
     )
   }
   // 6. ready — and an identity paper, a passport, a medical file… into the vault, in the same step

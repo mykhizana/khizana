@@ -6,6 +6,7 @@ import { api } from '@/db/api'
 import { idb } from '@/db/idb'
 import { MODE, MODEL, SUPABASE_URL } from '@/lib/config'
 import { costOf, type Usage } from '@/lib/cost'
+import { SONNET, isOpus, sonnetFallback } from './models'
 
 export class BudgetError extends Error {
   spent: number
@@ -20,11 +21,19 @@ export class BudgetError extends Error {
 export type AiErrorKind = 'refusal' | 'truncated' | 'network' | 'auth' | 'rate' | 'server' | 'parse' | 'credit' | 'files' | 'other'
 export class AiError extends Error {
   kind: AiErrorKind
-  constructor(message: string, kind: AiErrorKind) {
+  /** the HTTP status from Anthropic, when there was one */
+  status?: number
+  constructor(message: string, kind: AiErrorKind, status?: number) {
     super(message)
     this.kind = kind
+    this.status = status
   }
 }
+
+// Sonnet 5.5 could not be used with this key (or refused our request): this session reads with Opus
+let economyOff: string | null = null
+/** why the cheaper model is not being used right now (null: it is fine) */
+export const economyProblem = () => economyOff
 
 export type AiParams = {
   system: string | { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }[]
@@ -100,36 +109,59 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
 // ------------------------------------------------------------------ one request
 type Msg = { content: { type: string; text?: string }[]; model: string; usage: Usage; stop_reason: string | null; stop_details?: { explanation?: string | null } | null }
 
-export async function send<T>(op: string, params: AiParams, opts: { documentId?: string; estimate: number }): Promise<SendResult<T>> {
+/** one call from this browser with the owner's key */
+async function callClaude(key: string, model: string, params: AiParams): Promise<Msg> {
+  const { default: Anthropic } = await import('@anthropic-ai/sdk')
+  const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 4, timeout: 10 * 60 * 1000 })
+  try {
+    const stream = client.beta.messages.stream({
+      model,
+      ...(params as object),
+      // Opus: a policy decline is retried automatically on the server's default fallback model.
+      // Sonnet: the app itself hands a declined document to Opus (see send).
+      ...(isOpus(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
+    } as Parameters<typeof client.beta.messages.stream>[0])
+    return (await stream.finalMessage()) as unknown as Msg
+  } catch (e) {
+    const status = e instanceof Anthropic.APIError ? e.status : undefined
+    if (e instanceof Anthropic.AuthenticationError) throw new AiError('مفتاح Claude غير صالح', 'auth', status)
+    if (e instanceof Anthropic.PermissionDeniedError) throw new AiError('المفتاح لا يملك صلاحية هذا النموذج', 'auth', status)
+    if (e instanceof Anthropic.RateLimitError) throw new AiError('ضغط مؤقت على الخدمة، سيُعاد المحاولة', 'rate', status)
+    if (e instanceof Anthropic.APIConnectionError) throw new AiError('لا اتصال بالإنترنت', 'network')
+    // the API credit ran out (the monthly credit of the owner's plan, or the balance)
+    if (e instanceof Anthropic.APIError && /credit balance|billing|purchase credits/i.test(e.message))
+      throw new AiError('نفد رصيد Claude API في حسابك: تتوقف المعالجة حتى يتجدد الرصيد أو تضيف رصيداً في console.anthropic.com', 'credit', status)
+    if (e instanceof Anthropic.BadRequestError) throw new AiError(`طلب مرفوض: ${e.message.slice(0, 160)}`, 'other', status)
+    if (e instanceof Anthropic.APIError) throw new AiError(`خطأ في الخدمة: ${e.message.slice(0, 160)}`, 'server', status)
+    throw e
+  }
+}
+
+/**
+ * One request to Claude. `opts.model` picks the model (Opus 5.5 unless the queue chose Sonnet 5.5 for a
+ * big import); a Sonnet answer that cannot be used is asked again of Opus, so a document never fails
+ * because of the cheaper model.
+ */
+export async function send<T>(op: string, params: AiParams, opts: { documentId?: string; estimate: number; model?: string }): Promise<SendResult<T>> {
+  const wanted = opts.model ?? MODEL
+  const model = wanted !== MODEL && economyOff ? MODEL : wanted
+  const again = () => send<T>(op, params, { ...opts, model: MODEL, estimate: opts.estimate * 2 })
   await checkBudget(opts.estimate)
   let msg: Msg
   if (MODE === 'cloud') {
-    const r = await invoke<{ message: Msg; cost_usd: number }>({ op, document_id: opts.documentId, params })
+    const r = await invoke<{ message: Msg; cost_usd: number }>({ op, document_id: opts.documentId, params, model })
     msg = r.message
   } else {
     const key = await getLocalKey()
     if (!key) throw new AiError('لم يُضف مفتاح Claude بعد', 'auth')
-    const { default: Anthropic } = await import('@anthropic-ai/sdk')
-    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 4, timeout: 10 * 60 * 1000 })
     try {
-      const stream = client.beta.messages.stream({
-        model: MODEL,
-        ...(params as object),
-        // a policy decline is retried automatically on the server's default fallback model
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
-      } as Parameters<typeof client.beta.messages.stream>[0])
-      msg = (await stream.finalMessage()) as unknown as Msg
+      msg = await callClaude(key, model, params)
     } catch (e) {
-      if (e instanceof Anthropic.AuthenticationError) throw new AiError('مفتاح Claude غير صالح', 'auth')
-      if (e instanceof Anthropic.PermissionDeniedError) throw new AiError('المفتاح لا يملك صلاحية هذا النموذج', 'auth')
-      if (e instanceof Anthropic.RateLimitError) throw new AiError('ضغط مؤقت على الخدمة، سيُعاد المحاولة', 'rate')
-      if (e instanceof Anthropic.APIConnectionError) throw new AiError('لا اتصال بالإنترنت', 'network')
-      // the API credit ran out (the monthly credit of the owner's plan, or the balance)
-      if (e instanceof Anthropic.APIError && /credit balance|billing|purchase credits/i.test(e.message))
-        throw new AiError('نفد رصيد Claude API في حسابك: تتوقف المعالجة حتى يتجدد الرصيد أو تضيف رصيداً في console.anthropic.com', 'credit')
-      if (e instanceof Anthropic.BadRequestError) throw new AiError(`طلب مرفوض: ${e.message.slice(0, 160)}`, 'other')
-      if (e instanceof Anthropic.APIError) throw new AiError(`خطأ في الخدمة: ${e.message.slice(0, 160)}`, 'server')
+      const next = model !== MODEL && e instanceof AiError ? sonnetFallback(e) : null
+      if (next === 'opus_off') {
+        economyOff = e instanceof Error ? e.message : String(e)
+        return again()
+      }
       throw e
     }
     const cost = costOf(msg.model, msg.usage)
@@ -148,7 +180,11 @@ export async function send<T>(op: string, params: AiParams, opts: { documentId?:
   }
   const costUsd = costOf(msg.model, msg.usage)
   if (spend) spend.cost += costUsd
-  if (msg.stop_reason === 'refusal') throw new AiError(msg.stop_details?.explanation || 'رفض النموذج معالجة هذه الوثيقة', 'refusal')
+  if (msg.stop_reason === 'refusal') {
+    // Sonnet declined this document: Opus (with its own server-side fallback) reads it instead
+    if (model !== MODEL && sonnetFallback({ kind: 'refusal' }) === 'opus') return again()
+    throw new AiError(msg.stop_details?.explanation || 'رفض النموذج معالجة هذه الوثيقة', 'refusal')
+  }
   if (msg.stop_reason === 'max_tokens') throw new AiError('الجواب أطول من المسموح', 'truncated')
   const text = msg.content.find((b) => b.type === 'text')?.text ?? ''
   let data: T
@@ -160,21 +196,30 @@ export async function send<T>(op: string, params: AiParams, opts: { documentId?:
   return { data, model: msg.model, usage: msg.usage, costUsd }
 }
 
-/** a tiny request to check the key / the function (costs a fraction of a cent) */
-export async function testAi(): Promise<{ ok: boolean; model?: string; error?: string }> {
+const PING: AiParams = {
+  system: 'Reply with the JSON {"ok": true}.',
+  messages: [{ role: 'user', content: 'ping' }],
+  max_tokens: 2000,
+  output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', additionalProperties: false, required: ['ok'], properties: { ok: { type: 'boolean' } } } } },
+}
+
+/**
+ * Two tiny requests to check the key (a fraction of a cent): Opus 5.5, then Sonnet 5.5 for the big
+ * imports. `economy` is false when Sonnet cannot be used with this key (Opus then reads everything).
+ */
+export async function testAi(): Promise<{ ok: boolean; model?: string; economy?: boolean; error?: string }> {
   try {
-    const r = await send<{ ok: boolean }>(
-      'test',
-      {
-        system: 'Reply with the JSON {"ok": true}.',
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 2000,
-        output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', additionalProperties: false, required: ['ok'], properties: { ok: { type: 'boolean' } } } } },
-      },
-      { estimate: 0.01 },
-    )
+    const r = await send<{ ok: boolean }>('test', PING, { estimate: 0.01 })
     resetAiStatus()
-    return { ok: r.data.ok === true, model: r.model }
+    economyOff = null
+    let economy = false
+    try {
+      const s = await send<{ ok: boolean }>('test', PING, { estimate: 0.01, model: SONNET })
+      economy = s.model.startsWith('claude-sonnet') && !economyOff
+    } catch {
+      economy = false
+    }
+    return { ok: r.data.ok === true, model: r.model, economy }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }

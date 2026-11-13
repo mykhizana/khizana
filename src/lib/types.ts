@@ -279,6 +279,8 @@ export type Settings = {
   alert_ratio?: number
   economy?: boolean
   ai_model?: string
+  /** who reads the documents: «auto» (Sonnet 5.5 for a big import), «opus» or «sonnet» — see src/ai/models.ts */
+  reading_mode?: 'auto' | 'opus' | 'sonnet'
   [k: string]: unknown
 }
 

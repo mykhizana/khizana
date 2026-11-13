@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { isSonnet } from '@/ai/models'
 import { MODE } from '@/lib/config'
 import { useAiMode, useCounts, useQueue } from '@/lib/queries'
 import { queue } from '@/pipeline/queue'
@@ -56,6 +57,8 @@ export function useTheme() {
 
 function QueueCard() {
   const q = useQueue()
+  // without a Claude key the approximate classifier works: no model to show
+  const claude = useAiMode().data === 'claude'
   if (!q.running.length && !q.pending && !q.paused) return null
   return (
     <div className="rounded-2xl border border-line bg-surface-2 p-3 text-xs">
@@ -71,10 +74,14 @@ function QueueCard() {
         )}
       </div>
       {q.message && <p className="mb-2 leading-relaxed text-warning">{q.message}</p>}
+      {claude && q.economy && !q.paused && <p className="mb-2 leading-relaxed text-muted">يقرؤها Sonnet 5.5 بنصف الثمن</p>}
       <div className="space-y-2">
         {q.running.map((j) => (
           <Link key={j.id} to={`/doc/${j.id}`} className="block">
-            <div className="truncate text-text">{j.title}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="min-w-0 flex-1 truncate text-text">{j.title}</span>
+              {claude && isSonnet(j.model) && <span className="shrink-0 rounded-md bg-surface px-1.5 text-[10px] text-muted">Sonnet</span>}
+            </div>
             <div className="truncate text-muted">{j.detail ?? '…'}</div>
             <Progress value={j.ratio ?? 0.15} className="mt-1" />
           </Link>

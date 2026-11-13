@@ -1,10 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Bot, CheckCircle2, Cloud, Database, DownloadCloud, FolderTree, HardDrive, KeyRound, LogOut, Moon, ShieldCheck, Trash2, UploadCloud, Wallet, XCircle } from 'lucide-react'
+import { Bot, CheckCircle2, Cloud, Database, DownloadCloud, FolderTree, Gauge, HardDrive, KeyRound, LogOut, Moon, ShieldCheck, Trash2, UploadCloud, Wallet, XCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { api } from '@/db/api'
 import { idb } from '@/db/idb'
-import { getLocalKey, resetAiStatus, resetBudgetCache, setLocalKey, testAi } from '@/ai/transport'
+import { ECONOMY_FROM, modelName, readingMode } from '@/ai/models'
+import { economyProblem, getLocalKey, resetAiStatus, resetBudgetCache, setLocalKey, testAi } from '@/ai/transport'
 import { MODE } from '@/lib/config'
 import { fmtUsd } from '@/lib/cost'
 import { fmtNum, fmtSize } from '@/lib/format'
@@ -47,7 +48,7 @@ export default function SettingsPage() {
   const [key, setKey] = useState('')
   const [hasKey, setHasKey] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [test, setTest] = useState<{ ok: boolean; model?: string; error?: string } | null>(null)
+  const [test, setTest] = useState<{ ok: boolean; model?: string; economy?: boolean; error?: string } | null>(null)
   const [cap, setCap] = useState('')
   const [storage, setStorage] = useState<{ used: number; quota: number } | null>(null)
   const [backup, setBackup] = useState<{ done: number; total: number } | null>(null)
@@ -67,6 +68,8 @@ export default function SettingsPage() {
   const capNum = Number(usage?.cap ?? 0)
   const spent = Number(usage?.month_cost ?? 0)
   const autonomy = (settings?.autonomy as string) ?? 'ask'
+  const reading = readingMode(settings?.reading_mode)
+  const economyIssue = economyProblem()
 
   const saveKey = async () => {
     if (!key.trim().startsWith('sk-ant-')) return toast.error('مفتاح Claude يبدأ بـ sk-ant-')
@@ -92,12 +95,13 @@ export default function SettingsPage() {
     <div className="max-w-3xl">
       <PageHeader title="الإعدادات" icon={ShieldCheck} />
       <div className="space-y-5">
-        <Block id="ai" icon={Bot} title="الذكاء الاصطناعي: Claude Opus 5.5" desc="يقرأ الصفحات الممسوحة (العربية والفرنسية والإسبانية وخط اليد)، يفهم كل وثيقة ويصنفها، يقارن المتشابهات، ويفهم جمل البحث.">
+        <Block id="ai" icon={Bot} title="الذكاء الاصطناعي: Claude" desc="يقرأ الصفحات الممسوحة (العربية والفرنسية والإسبانية وخط اليد)، يفهم كل وثيقة ويصنفها، يقارن المتشابهات، ويفهم جمل البحث.">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <Badge tone={ai === 'claude' ? 'success' : 'warning'} icon={ai === 'claude' ? CheckCircle2 : XCircle}>
               {ai === 'claude' ? 'متصل' : 'غير متصل — التصنيف تقريبي'}
             </Badge>
-            {test?.model && <Badge>{test.model}</Badge>}
+            {test?.model && <Badge>{modelName(test.model)}</Badge>}
+            {test?.ok && test.economy && <Badge>Claude Sonnet 5.5</Badge>}
           </div>
           {MODE === 'local' ? (
             <>
@@ -144,6 +148,40 @@ export default function SettingsPage() {
             <p className="text-sm text-muted">المفتاح محفوظ في دالة «kh-ai» على Supabase (متغير ANTHROPIC_API_KEY).</p>
           )}
           {test && !test.ok && <p className="mt-3 rounded-xl bg-danger-bg px-3 py-2 text-sm text-danger">{test.error}</p>}
+          {test?.ok && test.economy === false && (
+            <p className="mt-3 rounded-xl bg-warning-bg px-3 py-2 text-sm text-warning">مفتاحك لا يصل إلى Claude Sonnet 5.5: يقرأ Opus 5.5 كل شيء بالسعر الكامل.</p>
+          )}
+        </Block>
+
+        <Block id="reading" icon={Gauge} title="من يقرأ وثائقك" desc="Claude Opus 5.5 هو الأدق، وClaude Sonnet 5.5 بنصف ثمنه بالضبط. البحث يبقى مع Opus دائماً.">
+          <div className="space-y-2">
+            {[
+              { v: 'auto', t: 'تلقائي (ينصح به)', d: `وثيقة أو بضع وثائق: Opus 5.5. استيراد كبير (${ECONOMY_FROM} وثائق فأكثر في الانتظار): Sonnet 5.5 بنصف الثمن حتى ينتهي.` },
+              { v: 'opus', t: 'Opus 5.5 دائماً', d: 'الأدق في كل شيء، بالسعر الكامل.' },
+              { v: 'sonnet', t: 'Sonnet 5.5 دائماً', d: 'نصف الثمن في كل شيء.' },
+            ].map((o) => (
+              <label key={o.v} className={cn('flex cursor-pointer items-start gap-3 rounded-xl border p-3', reading === o.v ? 'border-brand-500 bg-brand-50' : 'border-line')}>
+                <input
+                  type="radio"
+                  name="reading_mode"
+                  className="mt-1 accent-[var(--brand-600)]"
+                  checked={reading === o.v}
+                  onChange={async () => {
+                    await api.setSetting('reading_mode', o.v)
+                    await qc.invalidateQueries({ queryKey: ['settings'] })
+                  }}
+                />
+                <span>
+                  <span className="block text-sm font-medium text-ink">{o.t}</span>
+                  <span className="text-xs leading-relaxed text-muted">{o.d}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-muted">
+            وثيقة قرأها Sonnet ولم تعجبك قراءتها: افتحها، ثم ⋮ ← «اقرأ الصفحات من جديد بـ Opus 5.5». وكل ما يرفضه Sonnet يقرؤه Opus تلقائياً.
+          </p>
+          {economyIssue && <p className="mt-3 rounded-xl bg-warning-bg px-3 py-2 text-sm text-warning">توقف استعمال Sonnet 5.5 في هذه الجلسة، ويقرأ Opus كل شيء: {economyIssue}</p>}
         </Block>
 
         <Block icon={Wallet} title="الميزانية الشهرية" desc="لا تُنفق أي تكلفة فوق هذا السقف: تتوقف المعالجة وتنتظر إذنك.">
@@ -182,7 +220,7 @@ export default function SettingsPage() {
             </div>
           )}
           <p className="mt-3 text-xs text-muted">
-            <span className="num">{fmtNum(usage?.month_calls ?? 0)}</span> طلباً هذا الشهر · المجموع منذ البداية <span className="num">{fmtUsd(Number(usage?.total_cost ?? 0))}</span> · Claude Opus 5.5: 4$ لكل مليون رمز مدخل و20$ لكل مليون رمز مخرج.
+            <span className="num">{fmtNum(usage?.month_calls ?? 0)}</span> طلباً هذا الشهر · المجموع منذ البداية <span className="num">{fmtUsd(Number(usage?.total_cost ?? 0))}</span> · لكل مليون رمز (مدخل / مخرج): Opus 5.5 ‏4$ / 20$، وSonnet 5.5 ‏2$ / 10$.
           </p>
         </Block>
 

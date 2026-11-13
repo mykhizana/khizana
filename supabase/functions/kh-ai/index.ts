@@ -11,6 +11,8 @@ import Anthropic from 'npm:@anthropic-ai/sdk@1.8.0'
 import { createClient } from 'npm:@supabase/supabase-js@2.119.0'
 
 const MODEL = 'claude-opus-5-5'
+// the app may ask for Sonnet 5.5 (half the price) for a big import; nothing else
+const MODELS = new Set([MODEL, 'claude-sonnet-5-5'])
 const OPS = new Set(['transcribe', 'understand', 'split', 'judge', 'query', 'test'])
 const MAX_TOKENS: Record<string, number> = { transcribe: 32000, understand: 16000, split: 8000, judge: 6000, query: 3000, test: 2000 }
 
@@ -79,16 +81,17 @@ Deno.serve(async (req) => {
   const cap = Number.isFinite(asked) && asked > 0 ? Math.min(asked, ceiling) : ceiling
   if (spent >= cap) return json({ error: 'بلغت السقف الشهري', spent, cap }, 402)
 
-  // only what the app is allowed to ask: our model, our token ceilings, no tools
+  // only what the app is allowed to ask: our models, our token ceilings, no tools
   const p = body.params as Record<string, unknown>
+  const model = MODELS.has(String(body.model)) ? String(body.model) : MODEL
   const params = {
-    model: MODEL,
+    model,
     system: p.system,
     messages: p.messages,
     max_tokens: Math.min(Number(p.max_tokens) || 4000, MAX_TOKENS[op]),
     output_config: p.output_config,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    // Opus: a declined request is retried on the server's default fallback; a Sonnet refusal goes back to the app, which asks Opus
+    ...(model.startsWith('claude-opus') ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
   }
 
   const client = new Anthropic({ apiKey: key, maxRetries: 4, timeout: 9 * 60 * 1000 })
