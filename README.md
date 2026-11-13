@@ -2,7 +2,7 @@
 
 A private, AI-organised document archive (Arabic-first, RTL) — documents are read and classified by Claude Opus 5.5, duplicates are stopped by six layers of fingerprints, and everything is searchable across Arabic, French, Spanish and English.
 
-**Open it**: <https://yassir1778.github.io/khizana/> — only the app's code lives here. Documents, the index and the keys stay on each device and in the owner's own Google Drive. Every push to `main` runs all the tests, then publishes ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)).
+**Open it**: <https://mykhizana.github.io/khizana/> — only the app's code lives here. Documents, the index and the keys stay on each device and in the owner's own Google Drive. Every push to `main` runs all the tests, then publishes ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)).
 
 - **Stack**: React 19 · Vite 8 · TypeScript 7 · Tailwind 4 · TanStack Query · PGlite (Postgres in the browser) / Supabase · pdf.js · fflate · @anthropic-ai/sdk
 - **One data layer, two homes**: `supabase/schema.sql` defines every table, rule and `kh_*` function. The same file runs in the browser (device mode, with `supabase/local-stubs.sql`) and in Supabase (cloud mode). The app only calls functions (`src/db/api.ts`).

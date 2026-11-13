@@ -34,7 +34,7 @@ npm run dev
 
 ثم افتح `http://localhost:5177/khizana/`. كل شيء يُحفظ في المتصفح على هذا الجهاز (قاعدة بيانات Postgres حقيقية داخل المتصفح)، ثم في Google Drive بعد ربطه (الفقرة 5).
 
-**أو دون أي تثبيت**: التطبيق منشور على **https://yassir1778.github.io/khizana/**، فافتحه من الحاسوب والهاتف معاً. المنشور هو الكود وحده؛ وثائقك تبقى على أجهزتك وفي Drive الخاص بك. ولكل عنوان نسخته في المتصفح: ما تضيفه في `localhost` لا يظهر في العنوان المنشور، والعكس، ويجمع Google Drive بينهما.
+**أو دون أي تثبيت**: التطبيق منشور على **https://mykhizana.github.io/khizana/**، فافتحه من الحاسوب والهاتف معاً. المنشور هو الكود وحده؛ وثائقك تبقى على أجهزتك وفي Drive الخاص بك. ولكل عنوان نسخته في المتصفح: ما تضيفه في `localhost` لا يظهر في العنوان المنشور، والعكس، ويجمع Google Drive بينهما.
 
 > قبل ربط Claude يعمل التطبيق «بتصنيف تقريبي»: قواعد بسيطة تُظهر كل الميزات، لكنه لا يقرأ الصور الممسوحة.
 
@@ -89,10 +89,10 @@ npm run dev
    - ثم في **Audience** اضغط **Publish app** (التطبيق لا يطلب إلا صلاحيتين بسيطتين).
 4. **Data Access ← Add or remove scopes**: أضف `.../auth/drive.file` و`.../auth/drive.appdata` ← Save.
 5. **Clients ← Create client** ← النوع **Web application**:
-   - **Authorized JavaScript origins**: `https://yassir1778.github.io` (العنوان المنشور، دون مسار)، و`http://localhost:5177` إن أردت التجربة على الحاسوب.
-   - **Authorized redirect URIs**: `https://yassir1778.github.io/khizana/`، و`http://localhost:5177/khizana/`.
+   - **Authorized JavaScript origins**: `https://mykhizana.github.io` (العنوان المنشور، دون مسار)، و`http://localhost:5177` إن أردت التجربة على الحاسوب.
+   - **Authorized redirect URIs**: `https://mykhizana.github.io/khizana/`، و`http://localhost:5177/khizana/`.
    - **Create**، ثم انسخ **Client ID** (ينتهي بـ `apps.googleusercontent.com`). هذا المعرّف ليس سراً، ولا تحتاج «Client secret».
-6. ضعه مرة واحدة في GitHub ليُبنى مع التطبيق فلا تلصقه في كل جهاز: مستودع **khizana ← Settings ← Secrets and variables ← Actions ← Variables ← New repository variable**، الاسم `GOOGLE_CLIENT_ID` والقيمة المعرّف، ثم **Actions ← Test and deploy to GitHub Pages ← Run workflow**. (أو الصقه في **الإعدادات ← Google Drive** في كل جهاز.)
+6. ضعه مرة واحدة في GitHub ليُبنى مع التطبيق فلا تلصقه في كل جهاز: **github.com/mykhizana/khizana ← Settings ← Secrets and variables ← Actions ← Variables ← New repository variable**، الاسم `GOOGLE_CLIENT_ID` والقيمة المعرّف، ثم **Actions ← Test and deploy to GitHub Pages ← Run workflow**. (أو الصقه في **الإعدادات ← Google Drive** في كل جهاز.)
 
 ### ب. ربط الجهاز الأول (الحاسوب)
 1. **الإعدادات ← Google Drive**: الصق المعرّف ← حفظ ← **اربط Google Drive**.
@@ -100,7 +100,7 @@ npm run dev
 3. «إنشاء أرشيفك في Drive» ← **ابدأ**. يُرفع كل شيء في الخلفية، وترى العداد في الإعدادات.
 
 ### ج. ربط الهاتف
-1. افتح **https://yassir1778.github.io/khizana/** على الهاتف (عنوان https: يشترطه Google للدخول)، ثم **الإعدادات ← Google Drive ← اربط**.
+1. افتح **https://mykhizana.github.io/khizana/** على الهاتف (عنوان https: يشترطه Google للدخول)، ثم **الإعدادات ← Google Drive ← اربط**.
 2. «وجدنا أرشيفك في Drive» ← **ابدأ**: يُنزَّل الفهرس، وتظهر كل وثائقك.
 3. أضف التطبيق إلى الشاشة الرئيسية. على iPhone، إن لم تُفتح نافذة Google فاستعمل «الدخول بطريقة أخرى».
 4. الصق مفتاح Claude في الهاتف أيضاً إن أردت أن يقرأ الهاتف ما تمسحه فوراً.
@@ -120,6 +120,7 @@ npm run dev
 ## 6. الأمان
 
 - **الخزنة**: الوثائق الحساسة تختفي من البحث والقوائم والأشخاص والآجال حتى تفتحها ببصمتك أو برمز قفل الجهاز (**الإعدادات ← الخزنة**). تُقفل وحدها إن بقي التطبيق في الخلفية 5 دقائق. ولا تُنسخ أبداً إلى مجلد «خزانة» المرئي: تبقى في الجزء المخفي من Drive. وإن نقلتَ وثيقة إلى الخزنة بعد نسخها، تُحذف نسختها المرئية نهائياً (لا إلى سلة Drive).
+- **عنوان خاص بخزانة وحدها**: `mykhizana.github.io` (منظمة GitHub مجانية خاصة بها، فيها مستودع الكود `github.com/mykhizana/khizana`). المتصفح يجعل كل ما تحت عنوان واحد تطبيقاً واحداً، فلا يُنشر تحت هذا العنوان أي موقع آخر (لا Sweet House ولا Bella ولا أي كود إعلانات): ما تحفظه خزانة في المتصفح لا يصل إليه كود موقع آخر.
 - لا يدخل التطبيق إلا ما أنشأه هو في Drive: لا يرى ملفاتك الأخرى أبداً (صلاحية «الملفات التي ينشئها التطبيق» فقط).
 - مفتاح Claude يبقى على كل جهاز، ولا يُرسل إلا إلى Anthropic. وإذن Google يُحفظ ساعة واحدة فقط.
 - بيانات Anthropic API التجارية لا تُستعمل لتدريب النماذج.
