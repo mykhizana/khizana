@@ -1,0 +1,222 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------
+   خزانة — design tokens
+   Deep Qarawiyyin green (the old libraries) · brass (the door keys) · parchment.
+   ------------------------------------------------------------------ */
+:root {
+  --bg: #f6f2e9;
+  --bg-2: #efe8d9;
+  --surface: #fffdf8;
+  --surface-2: #f8f3e8;
+  --ink: #0e1f1c;
+  --text: #1c2b28;
+  --muted: #5b6965;
+  --subtle: #8f9c97;
+  --line: #e6dece;
+  --line-2: #d6cbb3;
+
+  --brand-950: #082320;
+  --brand-900: #0c2e2b;
+  --brand-800: #0f3d39;
+  --brand-700: #134e48;
+  --brand-600: #17655d;
+  --brand-500: #1f7f74;
+  --brand-200: #b9ddd3;
+  --brand-100: #dcefe9;
+  --brand-50: #eef7f3;
+
+  --brass-700: #7d5719;
+  --brass-600: #9a6b25;
+  --brass-500: #b8893b;
+  --brass-400: #cfa75f;
+  --brass-200: #efe0bf;
+  --brass-100: #f7efdc;
+
+  --danger: #b42318;
+  --danger-bg: #fdecea;
+  --warning: #b54708;
+  --warning-bg: #fef4e6;
+  --success: #067647;
+  --success-bg: #e8f6ee;
+  --info: #175cd3;
+  --info-bg: #eaf1fd;
+
+  --shadow-sm: 0 1px 2px rgb(14 31 28 / 0.06), 0 2px 8px rgb(14 31 28 / 0.05);
+  --shadow: 0 2px 6px rgb(14 31 28 / 0.06), 0 12px 32px rgb(14 31 28 / 0.09);
+  --shadow-lg: 0 24px 64px rgb(14 31 28 / 0.22);
+
+  --ff-display: 'Amiri', Georgia, serif;
+  --ff-sans: 'IBM Plex Sans Arabic', 'Inter', system-ui, sans-serif;
+  --ff-latin: 'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0b1312;
+  --bg-2: #0f1917;
+  --surface: #121c1b;
+  --surface-2: #172322;
+  --ink: #eef3f1;
+  --text: #dfe7e4;
+  --muted: #9fb0ab;
+  --subtle: #6f817c;
+  --line: #22302e;
+  --line-2: #2d3d3a;
+
+  --brand-100: #16302c;
+  --brand-50: #12231f;
+  --brand-200: #24504a;
+  --brass-100: #2a2316;
+  --brass-200: #3b301b;
+
+  --danger-bg: #2c1513;
+  --warning-bg: #2c1e10;
+  --success-bg: #0f2519;
+  --info-bg: #111d33;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow: 0 8px 28px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-brand-950: var(--brand-950);
+  --color-brand-900: var(--brand-900);
+  --color-brand-800: var(--brand-800);
+  --color-brand-700: var(--brand-700);
+  --color-brand-600: var(--brand-600);
+  --color-brand-500: var(--brand-500);
+  --color-brand-200: var(--brand-200);
+  --color-brand-100: var(--brand-100);
+  --color-brand-50: var(--brand-50);
+  --color-brass-700: var(--brass-700);
+  --color-brass-600: var(--brass-600);
+  --color-brass-500: var(--brass-500);
+  --color-brass-400: var(--brass-400);
+  --color-brass-200: var(--brass-200);
+  --color-brass-100: var(--brass-100);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+
+  --font-sans: var(--ff-sans);
+  --shadow-soft: var(--shadow-sm);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+@layer components {
+  html,
+  body {
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100%;
+  }
+  body {
+    font-family: var(--ff-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  .font-display {
+    font-family: var(--ff-display);
+    font-weight: 700;
+  }
+  .num,
+  .latin {
+    font-family: var(--ff-latin);
+    font-variant-numeric: tabular-nums;
+  }
+  *:focus-visible {
+    outline: 2px solid var(--brass-500);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: rgb(184 137 59 / 0.3);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+  mark.kh-hit {
+    background: rgb(207 167 95 / 0.38);
+    color: inherit;
+    border-radius: 3px;
+    padding: 0 1px;
+  }
+  .kh-paper {
+    background:
+      radial-gradient(1200px 400px at 100% -10%, rgb(31 127 116 / 0.07), transparent 60%),
+      radial-gradient(900px 400px at -10% 0%, rgb(184 137 59 / 0.08), transparent 60%),
+      var(--bg);
+  }
+  .kh-hero {
+    background:
+      radial-gradient(700px 300px at 85% 0%, rgb(207 167 95 / 0.22), transparent 65%),
+      linear-gradient(160deg, var(--brand-800), var(--brand-950));
+  }
+  .kh-arch {
+    border-top-left-radius: 999px 70%;
+    border-top-right-radius: 999px 70%;
+  }
+  .kh-scroll-x {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .kh-scroll-x::-webkit-scrollbar {
+    display: none;
+  }
+  .kh-checker {
+    background-image:
+      linear-gradient(45deg, rgb(0 0 0 / 0.04) 25%, transparent 25%),
+      linear-gradient(-45deg, rgb(0 0 0 / 0.04) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, rgb(0 0 0 / 0.04) 75%),
+      linear-gradient(-45deg, transparent 75%, rgb(0 0 0 / 0.04) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  }
+  @keyframes kh-pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgb(207 167 95 / 0.55); }
+    100% { box-shadow: 0 0 0 14px rgb(207 167 95 / 0); }
+  }
+  .kh-pulse {
+    animation: kh-pulse-ring 1.4s ease-out infinite;
+  }
+  @keyframes kh-shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+  .kh-skeleton {
+    background: linear-gradient(90deg, var(--surface-2) 0, var(--line) 50%, var(--surface-2) 100%);
+    background-size: 800px 100%;
+    animation: kh-shimmer 1.3s linear infinite;
+  }
+  @media print {
+    .kh-no-print {
+      display: none !important;
+    }
+    body {
+      background: white !important;
+    }
+  }
+}
