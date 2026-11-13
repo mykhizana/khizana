@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>خزانة — الخصوصية</title>
+    <link rel="icon" type="image/svg+xml" href="logo.svg" />
+    <style>
+      :root {
+        --bg: #f6f2e9;
+        --card: #fffdf8;
+        --text: #1d2a28;
+        --muted: #55625f;
+        --accent: #0f3d39;
+        --line: #e4ddcd;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1514;
+          --card: #162020;
+          --text: #e8eeec;
+          --muted: #a3b1ae;
+          --accent: #7cc4b8;
+          --line: #263332;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.75 system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+      }
+      main { max-width: 760px; margin: 0 auto; padding: 32px 16px 56px; }
+      section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 20px 22px;
+        margin-bottom: 20px;
+      }
+      h1 { font-size: 1.6rem; margin: 0 0 4px; color: var(--accent); }
+      h2 { font-size: 1.15rem; margin: 0 0 8px; color: var(--accent); }
+      p, li { margin: 6px 0; }
+      ul { padding-inline-start: 22px; margin: 6px 0; }
+      .muted { color: var(--muted); font-size: 0.92rem; }
+      a { color: var(--accent); }
+      code { font-size: 0.9em; }
+      [lang='en'] { direction: ltr; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>خزانة — الخصوصية</h1>
+      <p class="muted">آخر تحديث: 13 نوفمبر 2026</p>
+
+      <section>
+        <h2>باختصار</h2>
+        <p>خزانة أرشيف شخصي يعمل كله داخل متصفحك. ليس له خادم يحفظ وثائقك أو يطّلع عليها، ولا يبيع شيئاً ولا يعرض إعلانات ولا يتتبّعك.</p>
+        <ul>
+          <li><strong>وثائقك وفهرسها ومفتاح Claude</strong> تُحفظ على جهازك (في المتصفح) وفي Google Drive الخاص بك فقط.</li>
+          <li><strong>Google Drive</strong>: يطلب التطبيق صلاحيتين فقط: الملفات التي ينشئها هو (<code>drive.file</code>)، ومجلده المخفي (<code>drive.appdata</code>). لا يرى ملفاتك الأخرى في Drive أبداً. وإذن Google يبقى على الجهاز ساعة واحدة.</li>
+          <li><strong>القراءة والتصنيف</strong>: تُرسل صفحات الوثيقة من جهازك مباشرة إلى Claude لدى Anthropic، بمفتاحك أنت، لتُقرأ وتُصنَّف. لا يمر شيء بخادم آخر.</li>
+          <li><strong>لا مشاركة</strong>: لا تُعطى بياناتك لأي جهة، ولا تُستعمل لأي غرض غير ترتيب أرشيفك لك.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>إيقاف الوصول وحذف البيانات</h2>
+        <ul>
+          <li>في التطبيق: <strong>الإعدادات ← Google Drive ← افصل هذا الجهاز</strong>، و<strong>الإعدادات ← منطقة الخطر</strong> لحذف كل شيء من الجهاز.</li>
+          <li>في حساب Google: <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> ← خزانة ← إزالة الوصول.</li>
+          <li>في Google Drive: احذف مجلد «خزانة»، ثم <strong>الإعدادات ← إدارة التطبيقات ← خزانة ← حذف بيانات التطبيق المخفية</strong>.</li>
+        </ul>
+      </section>
+
+      <section lang="en">
+        <h2>Privacy — Khizana</h2>
+        <p>Khizana is a personal document archive that runs entirely in your browser. There is no Khizana server that stores or reads your documents; there are no ads, no analytics and no tracking.</p>
+        <ul>
+          <li><strong>Your documents, their index and your Claude API key</strong> are stored only on your device (browser storage) and in your own Google Drive.</li>
+          <li><strong>Google Drive access</strong> is limited to two scopes: files the app creates (<code>drive.file</code>) and its hidden application data folder (<code>drive.appdata</code>). The app never sees your other Drive files. The Google access token stays on the device for about one hour.</li>
+          <li><strong>Reading and classifying</strong>: document pages are sent from your device directly to Anthropic's Claude API, with your own API key. Nothing passes through any other server.</li>
+          <li><strong>No sharing</strong>: your data is not sold, shared or used for anything other than organising your own archive.</li>
+          <li>Khizana's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</li>
+        </ul>
+        <p><strong>Revoking access and deleting data</strong>: disconnect the device in Settings → Google Drive; remove Khizana at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>; delete the «خزانة» folder and, in Drive Settings → Manage apps → Khizana, delete its hidden app data.</p>
+        <p class="muted">Source code: <a href="https://github.com/mykhizana/khizana">github.com/mykhizana/khizana</a></p>
+      </section>
+
+      <p class="muted"><a href="./">← العودة إلى خزانة</a></p>
+    </main>
+  </body>
+</html>

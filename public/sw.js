@@ -64,6 +64,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin || !url.pathname.startsWith(BASE)) return
 
   if (req.mode === 'navigate') {
+    // a separate static page (privacy.html) is not the app shell: never keep it as the shell
+    if (url.pathname.endsWith('.html') && !url.pathname.endsWith('/index.html')) return
     event.respondWith(
       fetch(req)
         .then((res) => {
