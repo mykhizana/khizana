@@ -231,5 +231,29 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('normalize query: 0 → no year, "" → no sensitivity, unknown types and languages dropped', q.year_from === 2018 && q.year_to === null && q.sensitivity === null && q.doc_types.join() === 'lecture' && q.languages.join() === 'fr' && q.category_ids.join() === 'c1')
 }
 
+// ------------------------------------------------------------ safety net: a refused schema → plain JSON
+{
+  const { GRAMMAR_REFUSED, looseParams, parseLooseJson } = await import('../src/ai/loose.ts')
+  const S = await import('../src/ai/schemas.ts')
+  const seen = '400 {"type":"error","error":{"type":"invalid_request_error","message":"The compiled grammar is too large, which would cause performance issues. Simplify your to'
+  ok('loose: recognises the refusal the owner saw, and the documented one', GRAMMAR_REFUSED.test(seen) && GRAMMAR_REFUSED.test('Schema is too complex for compilation.') && !GRAMMAR_REFUSED.test('credit balance is too low'))
+  const base = { system: [{ type: 'text', text: 'You are the archivist.' }, { type: 'text', text: 'shelves…', cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: 'x' }], max_tokens: 16000, output_config: { effort: 'medium', format: { type: 'json_schema', schema: S.UNDERSTAND_SCHEMA } } }
+  const loose = looseParams(base)
+  ok('loose: no format any more, effort kept, the schema written into the instructions', !loose.output_config.format && loose.output_config.effort === 'medium' && loose.system.length === 3 && loose.system[2].text.includes('"doc_type"') && loose.system[1].cache_control?.type === 'ephemeral')
+  const looseStr = looseParams({ ...base, system: 'Transcribe.', output_config: { effort: 'low', format: { type: 'json_schema', schema: S.TRANSCRIBE_SCHEMA } } })
+  ok('loose: a plain-text system prompt gets the rule appended', typeof looseStr.system === 'string' && looseStr.system.startsWith('Transcribe.') && looseStr.system.includes('"legibility"'))
+  ok('loose: a request without a schema is unchanged', looseParams({ ...base, output_config: { effort: 'low' } }).system === base.system)
+  ok('parse: plain JSON', parseLooseJson('{"a":1}').a === 1)
+  ok('parse: inside code fences', parseLooseJson('```json\n{"a":2}\n```').a === 2)
+  ok('parse: a sentence around the object', parseLooseJson('Here it is: {"a":{"b":3}} — done').a.b === 3)
+  let threw = false
+  try {
+    parseLooseJson('no json here')
+  } catch {
+    threw = true
+  }
+  ok('parse: no object → an error (the document is retried later)', threw)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

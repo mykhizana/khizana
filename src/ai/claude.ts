@@ -32,9 +32,11 @@ export async function transcribe(images: Blob[], documentId?: string, model?: st
     },
     { documentId, model, estimate: estimateCost({ images: images.length, outTokens: images.length * 1800, model }) },
   )
+  // (read tolerantly: without a schema — see loose.ts — a field may be missing)
+  const pages = Array.isArray(r.data?.pages) ? r.data.pages : []
   return images.map((_, i) => {
-    const p = r.data.pages.find((x) => x.index === i + 1) ?? r.data.pages[i]
-    return p ? { text: p.text ?? '', blank: !!p.blank, legibility: p.legibility ?? 'good' } : { text: '', blank: false, legibility: 'poor' }
+    const p = pages.find((x) => x && x.index === i + 1) ?? pages[i]
+    return p ? { text: typeof p.text === 'string' ? p.text : '', blank: p.blank === true, legibility: ['good', 'partial', 'poor'].includes(p.legibility) ? p.legibility : 'good' } : { text: '', blank: false, legibility: 'poor' }
   })
 }
 
@@ -118,7 +120,7 @@ export async function split(pageTexts: string[], documentId?: string, model?: st
     },
     { documentId, model, estimate: estimateCost({ chars: body.length, outTokens: 800, model }) },
   )
-  return normaliseSegments(r.data.documents, pageTexts.length)
+  return normaliseSegments(Array.isArray(r.data?.documents) ? r.data.documents : [], pageTexts.length)
 }
 
 // ------------------------------------------------------------------ 4. are these two the same document?
@@ -137,7 +139,11 @@ export async function judge(fresh: Side, existing: Side, documentId?: string, mo
     { system: JUDGE_SYSTEM, messages: [{ role: 'user', content }], max_tokens: 6000, output_config: { effort: 'medium', format: fmt(JUDGE_SCHEMA) } },
     { documentId, model, estimate: estimateCost({ images: content.length - 1, chars: 10_000, outTokens: 600, model }) },
   )
-  return r.data
+  const relations: Judged['relation'][] = ['same', 'better_copy', 'version', 'annotated', 'translation', 'part', 'related', 'different']
+  const rel = String(r.data?.relation ?? '').toLowerCase() as Judged['relation']
+  const conf = Number(r.data?.confidence)
+  // an answer that cannot be read changes nothing: «different»
+  return { relation: relations.includes(rel) ? rel : 'different', confidence: Number.isFinite(conf) ? Math.min(1, Math.max(0, conf)) : 0.5, reason_ar: typeof r.data?.reason_ar === 'string' ? r.data.reason_ar : '' }
 }
 
 // ------------------------------------------------------------------ 5. a search phrase → filters

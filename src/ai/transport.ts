@@ -6,6 +6,7 @@ import { api } from '@/db/api'
 import { idb } from '@/db/idb'
 import { MODE, MODEL, SUPABASE_URL } from '@/lib/config'
 import { costOf, type Usage } from '@/lib/cost'
+import { GRAMMAR_REFUSED, looseParams, parseLooseJson } from './loose'
 import { SONNET, isOpus, sonnetFallback } from './models'
 
 export class BudgetError extends Error {
@@ -34,6 +35,9 @@ export class AiError extends Error {
 let economyOff: string | null = null
 /** why the cheaper model is not being used right now (null: it is fine) */
 export const economyProblem = () => economyOff
+
+// operations whose answer schema the API refused to compile: this session they ask for plain JSON
+const looseOps = new Set<string>()
 
 export type AiParams = {
   system: string | { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }[]
@@ -146,17 +150,33 @@ export async function send<T>(op: string, params: AiParams, opts: { documentId?:
   const wanted = opts.model ?? MODEL
   const model = wanted !== MODEL && economyOff ? MODEL : wanted
   const again = () => send<T>(op, params, { ...opts, model: MODEL, estimate: opts.estimate * 2 })
+  // the answer schema was refused once: the schema goes into the instructions instead (loose.ts)
+  const p = looseOps.has(op) ? looseParams(params) : params
+  const refused = (e: unknown) => e instanceof AiError && GRAMMAR_REFUSED.test(e.message) && !looseOps.has(op)
   await checkBudget(opts.estimate)
   let msg: Msg
   if (MODE === 'cloud') {
-    const r = await invoke<{ message: Msg; cost_usd: number }>({ op, document_id: opts.documentId, params, model })
-    msg = r.message
+    try {
+      const r = await invoke<{ message: Msg; cost_usd: number }>({ op, document_id: opts.documentId, params: p, model })
+      msg = r.message
+    } catch (e) {
+      if (refused(e)) {
+        looseOps.add(op)
+        return send<T>(op, params, opts)
+      }
+      throw e
+    }
   } else {
     const key = await getLocalKey()
     if (!key) throw new AiError('لم يُضف مفتاح Claude بعد', 'auth')
     try {
-      msg = await callClaude(key, model, params)
+      msg = await callClaude(key, model, p)
     } catch (e) {
+      // not the model's fault, nor Sonnet's: the same request once more, asking for plain JSON
+      if (refused(e)) {
+        looseOps.add(op)
+        return send<T>(op, params, opts)
+      }
       const next = model !== MODEL && e instanceof AiError ? sonnetFallback(e) : null
       if (next === 'opus_off') {
         // Opus reads it; Sonnet is set aside for this session only if Opus succeeds where it failed
@@ -192,7 +212,7 @@ export async function send<T>(op: string, params: AiParams, opts: { documentId?:
   const text = msg.content.find((b) => b.type === 'text')?.text ?? ''
   let data: T
   try {
-    data = JSON.parse(text) as T
+    data = parseLooseJson(text) as T
   } catch {
     throw new AiError('جواب غير مفهوم من النموذج', 'parse')
   }
