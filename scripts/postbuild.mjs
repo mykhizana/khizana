@@ -3,7 +3,7 @@
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 
 const DIST = 'dist'
-const ROUTES = ['search', 'ask', 'library', 'add', 'scan', 'review', 'people', 'places', 'labels', 'settings']
+const ROUTES = ['search', 'ask', 'deadlines', 'library', 'add', 'scan', 'review', 'people', 'places', 'labels', 'settings']
 
 try {
   writeFileSync(`${DIST}/sw.js`, readFileSync(`${DIST}/sw.js`, 'utf8').replace('__BUILD__', Date.now().toString(36)))

@@ -1,5 +1,6 @@
 // The frame around every screen: side menu (computer), bottom bar (phone), search, add, background work.
 import {
+  AlarmClock,
   Archive,
   Camera,
   CircleDot,
@@ -36,6 +37,7 @@ const NAV = [
   { to: '/', label: 'الرئيسية', icon: Home, end: true },
   { to: '/search', label: 'البحث', icon: Search },
   { to: '/ask', label: 'اسأل خزانتك', icon: MessagesSquare },
+  { to: '/deadlines', label: 'الآجال', icon: AlarmClock },
   { to: '/library', label: 'المكتبة والرفوف', icon: Library },
   { to: '/review', label: 'تحتاج قرارك', icon: Inbox, badge: true },
   { to: '/people', label: 'الأشخاص والجهات', icon: Users },

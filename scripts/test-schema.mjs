@@ -338,6 +338,25 @@ ok('storage: a vault file is out of reach without the second factor', (await asU
 ok('storage: an ordinary file is readable', (await asUser(`select name from storage.objects where name = $1`, [`${A}/x/orig.pdf`])).length === 1)
 ok('storage: a vault file cannot be deleted without the second factor', (await asUser(`delete from storage.objects where name = $1 returning name`, [vaultPage])).length === 0)
 ok('vault metadata hidden: deadlines', !(await call('kh_overview')).deadlines.some((x) => x.document_id === pass1.id))
+// the deadline radar and the phone reminders
+ok('radar list: a closed vault hides its deadlines', !(await call('kh_deadlines_list')).some((x) => x.document_id === pass1.id))
+{
+  const src = (await call('kh_reminders_source')).find((x) => x.document_id === pass1.id)
+  ok('reminders: the vault deadlines stay (a closed vault must not delete their reminders), without any title', !!src && src.vault === true && src.title === null && src.doc_title === null)
+}
+{
+  const due = new Date(Date.now() + 90 * 864e5).toISOString().slice(0, 10)
+  const r1 = await call('kh_deadline_add', { title: 'تجديد بطاقة الإقامة (TIE)', due_date: due })
+  const r2 = await call('kh_deadline_add', { title: 'تجديد بطاقة الإقامة (TIE)', due_date: due })
+  const mine = (await call('kh_deadlines_list')).filter((x) => x.id === r1.id)
+  ok('radar: a deadline added by the owner (no document) shows once, even added twice', r1.id === r2.id && mine.length === 1 && mine[0].document_id === null && mine[0].kind === 'reminder')
+  ok('reminders: it is in the reminders too, with its title', (await call('kh_reminders_source')).some((x) => x.id === r1.id && x.title === 'تجديد بطاقة الإقامة (TIE)'))
+  await call('kh_deadline_done', { id: r1.id })
+  ok('radar: done → out of the list and of the reminders (in the list with with_done)', !(await call('kh_deadlines_list')).some((x) => x.id === r1.id) && !(await call('kh_reminders_source')).some((x) => x.id === r1.id) && (await call('kh_deadlines_list', { with_done: true })).some((x) => x.id === r1.id && x.done))
+  await call('kh_deadline_delete', { id: r1.id })
+  ok('radar: deleted', !(await call('kh_deadlines_list', { with_done: true })).some((x) => x.id === r1.id))
+  await fails('radar: a deadline needs a title and a date', () => call('kh_deadline_add', { title: ' ', due_date: due }), /title and a date/)
+}
 ok('vault metadata hidden: corrections / links', (await asUser(`select 1 from public.kh_corrections where document_id = $1 union all select 1 from public.kh_links where from_id = $1 or to_id = $1`, [pass1.id])).length === 0)
 ok('vault metadata hidden: its pages and fingerprints', (await asUser(`select 1 from public.kh_pages where document_id = $1 union all select 1 from public.kh_lsh where document_id = $1`, [pass1.id])).length === 0)
 

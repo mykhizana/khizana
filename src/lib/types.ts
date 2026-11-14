@@ -56,6 +56,9 @@ export type DocLink = {
 
 export type Deadline = { id: string; document_id: string; kind: string; due_date: string; title: string; done: boolean }
 
+/** a row of the deadline radar */
+export type DeadlineItem = { id: string; due_date: string; title: string; kind: 'expiry' | 'action' | 'reminder'; done: boolean; document_id: string | null; doc_title: string | null; doc_type: string | null; vault: boolean }
+
 export type Proposal = {
   id: string
   parent_id: string | null

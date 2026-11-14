@@ -6,7 +6,8 @@ import { idb } from '@/db/idb'
 import { BASE } from '@/lib/config'
 import { DRIVE_FAKE, DRIVE_SCOPES, GOOGLE_CLIENT_ID } from './config'
 
-type Tok = { access_token: string; expires_at: number }
+/** `scope`: what Google granted (every permission given so far, thanks to include_granted_scopes) */
+type Tok = { access_token: string; expires_at: number; scope?: string }
 type GisResponse = { access_token?: string; expires_in?: number | string; scope?: string; error?: string; error_description?: string }
 type Gis = {
   initTokenClient: (c: Record<string, unknown>) => { requestAccessToken: (o?: Record<string, unknown>) => void }
@@ -111,13 +112,20 @@ export const auth = {
   /** the permission can be renewed by a Google window on this page (not on an iPhone home-screen app) */
   canRenewInPlace: () => !DRIVE_FAKE && !standaloneIos(),
 
-  /** from a click: Google's window asks the owner (the first time) or only confirms */
-  connect(opts: { consent?: boolean } = {}): Promise<void> {
+  /** a permission Google granted with the present token (the calendar reminders need their own) */
+  async hasScope(scope: string): Promise<boolean> {
+    if (DRIVE_FAKE) return true
+    await auth.token()
+    return (mem?.scope ?? '').split(' ').includes(scope)
+  },
+
+  /** from a click: Google's window asks the owner (the first time) or only confirms; `extra`: more permissions */
+  connect(opts: { consent?: boolean; extra?: string[] } = {}): Promise<void> {
     if (!connecting) connecting = auth.connectOnce(opts).finally(() => (connecting = null))
     return connecting
   },
 
-  async connectOnce(opts: { consent?: boolean } = {}): Promise<void> {
+  async connectOnce(opts: { consent?: boolean; extra?: string[] } = {}): Promise<void> {
     if (DRIVE_FAKE) return store({ access_token: 'fake-token', expires_at: Date.now() + 3600_000 })
     const client_id = await auth.clientId()
     if (!client_id) throw new Error('أضف معرّف Google (Client ID) أولاً')
@@ -127,14 +135,14 @@ export const auth = {
     await new Promise<void>((resolve, reject) => {
       const client = gis.initTokenClient({
         client_id,
-        scope: DRIVE_SCOPES.join(' '),
+        scope: [...DRIVE_SCOPES, ...(opts.extra ?? [])].join(' '),
         include_granted_scopes: true,
         prompt: opts.consent ? 'consent' : '',
         ...(hint ? { login_hint: hint } : {}),
         callback: (r: GisResponse) => {
           if (r.error || !r.access_token) return reject(new Error(r.error_description || r.error || 'لم يكتمل الدخول'))
           if (!gis.hasGrantedAllScopes(r, ...DRIVE_SCOPES)) return reject(new Error('يجب السماح لخزانة بالوصول إلى Drive: فعّل المربعين في نافذة Google'))
-          void store({ access_token: r.access_token, expires_at: Date.now() + Number(r.expires_in ?? 3599) * 1000 }).then(resolve, reject)
+          void store({ access_token: r.access_token, expires_at: Date.now() + Number(r.expires_in ?? 3599) * 1000, scope: r.scope }).then(resolve, reject)
         },
         error_callback: (e: { type?: string; message?: string }) =>
           reject(
@@ -175,7 +183,7 @@ export const auth = {
     history.replaceState(null, '', `${basename}${back}`)
     const granted = (h.get('scope') ?? '').split(' ')
     if (valid && h.get('access_token') && DRIVE_SCOPES.every((s) => granted.includes(s)))
-      await store({ access_token: h.get('access_token')!, expires_at: Date.now() + Number(h.get('expires_in') ?? 3599) * 1000 })
+      await store({ access_token: h.get('access_token')!, expires_at: Date.now() + Number(h.get('expires_in') ?? 3599) * 1000, scope: h.get('scope') ?? undefined })
     return back
   },
 

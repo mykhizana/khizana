@@ -19,6 +19,7 @@ import { Shell } from '@/ui/layout'
 const Home = lazy(() => import('@/pages/home'))
 const SearchPage = lazy(() => import('@/pages/search'))
 const AskPage = lazy(() => import('@/pages/ask'))
+const DeadlinesPage = lazy(() => import('@/pages/deadlines'))
 const LibraryPage = lazy(() => import('@/pages/library'))
 const DocPage = lazy(() => import('@/pages/doc'))
 const AddPage = lazy(() => import('@/pages/add'))
@@ -62,6 +63,7 @@ const router = createBrowserRouter(
         { index: true, element: page(<Home />) },
         { path: 'search', element: page(<SearchPage />) },
         { path: 'ask', element: page(<AskPage />) },
+        { path: 'deadlines', element: page(<DeadlinesPage />) },
         { path: 'library', element: page(<LibraryPage />) },
         { path: 'doc/:id', element: page(<DocPage />) },
         { path: 'add', element: page(<AddPage />) },
@@ -118,6 +120,7 @@ export function App() {
         // ask the browser never to delete the archive by itself (it may refuse: see the storage banner)
         void ensurePersistence()
         void driveSync.start()
+        void import('@/drive/reminders').then(({ reminders }) => reminders.start())
         if (back && back !== '/') void router.navigate(back)
       }
     } catch (e) {

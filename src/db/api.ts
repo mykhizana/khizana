@@ -1,4 +1,5 @@
 // Every request of the app: one kh_* database function, the same in both modes.
+import type { ReminderSource } from '@/drive/calendar'
 import { MODE } from '@/lib/config'
 import type {
   Category,
@@ -15,6 +16,7 @@ import type {
   SearchResult,
   Settings,
   UsageSummary,
+  DeadlineItem,
 } from '@/lib/types'
 
 async function call<T>(fn: string, p: unknown = {}): Promise<T> {
@@ -120,6 +122,11 @@ export const api = {
   sessionEnd: (id: string) => call('kh_session_end', { id }),
 
   deadlineDone: (id: string, done = true) => call('kh_deadline_done', { id, done }),
+  deadlines: (withDone = false) => call<DeadlineItem[]>('kh_deadlines_list', { with_done: withDone }),
+  deadlineAdd: (p: { title: string; due_date: string; document_id?: string | null; kind?: 'expiry' | 'action' | 'reminder' }) => call<{ id: string }>('kh_deadline_add', p),
+  deadlineDelete: (id: string) => call('kh_deadline_delete', { id }),
+  /** every open deadline for the phone reminders (the vault's without titles) */
+  remindersSource: () => call<ReminderSource[]>('kh_reminders_source'),
   exportAll: () => call<{ format: string; version: number; exported_at: string; tables: Record<string, unknown[]> }>('kh_export'),
   importAll: (backup: unknown) => call<{ ok: boolean; rows: number }>('kh_import', backup),
   vaultCount: () => call<{ count: number }>('kh_vault_count'),

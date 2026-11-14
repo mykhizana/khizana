@@ -295,5 +295,101 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('ask: ids are checked before reading', UUID.test(id1) && !UUID.test('1; drop table'))
 }
 
+// ------------------------------------------------------------ phone reminders through Google Calendar (a fake calendar)
+{
+  const { planReminders, syncReminders, eventId, addDays, CalendarError, CAL_NAME } = await import('../src/drive/calendar.ts')
+  const today = '2026-11-14'
+  const app = 'https://mykhizana.github.io/khizana/'
+  const rows = [
+    { id: 'a1', due_date: addDays(today, 90), kind: 'expiry', title: 'انتهاء صلاحية بطاقة الإقامة', document_id: 'd1', doc_title: 'بطاقة الإقامة TIE', vault: false },
+    { id: 'a2', due_date: addDays(today, 20), kind: 'action', title: 'الرد على رسالة الضرائب', document_id: 'd2', doc_title: 'رسالة الضرائب', vault: false },
+    { id: 'a3', due_date: addDays(today, 200), kind: 'expiry', title: null, document_id: 'd3', doc_title: null, vault: true },
+    { id: 'a4', due_date: addDays(today, -3), kind: 'expiry', title: 'فات', document_id: null, doc_title: null, vault: false },
+  ]
+  const plan = planReminders(rows, today, app)
+  ok('reminders: 2 months, 1 month, 1 week and the day — only those still ahead', plan.filter((e) => e.key === 'a1').length === 4 && plan.filter((e) => e.key === 'a2').length === 2 && plan.filter((e) => e.key === 'a3').length === 4 && !plan.some((e) => e.key === 'a4'))
+  const a1 = plan.filter((e) => e.key === 'a1').map((e) => e.summary)
+  ok('reminders: readable titles', a1[0] === 'بعد شهرين: انتهاء صلاحية بطاقة الإقامة' && a1[3] === 'اليوم: انتهاء صلاحية بطاقة الإقامة')
+  const vault = plan.filter((e) => e.key === 'a3')
+  ok('reminders: a vault document shows nothing of itself (neutral title, no name)', vault.every((e) => e.summary.endsWith('تنتهي صلاحية وثيقة من خزنتك') && !e.description.includes('null') && e.description.includes('خزنتك')))
+  ok('reminders: each one links to its document in the app', plan.find((e) => e.key === 'a1').description.includes(`${app}doc/d1`))
+  ok('reminders: event ids are stable and valid for Google (base32hex)', plan.every((e) => /^[a-v0-9]{5,1024}$/.test(e.id)) && eventId('a1|60') === eventId('a1|60') && eventId('a1|60') !== eventId('a1|30'))
+
+  // a small Google Calendar in memory
+  const cals = new Map()
+  let made = 0
+  const calls = []
+  let failNext = 0
+  const fake = async (url, init = {}) => {
+    const u = new URL(url)
+    const method = init.method ?? 'GET'
+    const body = init.body ? JSON.parse(init.body) : null
+    calls.push(`${method} ${u.pathname}`)
+    const res = (o, status = 200) => new Response(status === 204 ? null : JSON.stringify(o), { status, headers: { 'content-type': 'application/json' } })
+    if (failNext) {
+      failNext--
+      return res({ error: 'expired' }, 401)
+    }
+    const m = u.pathname.match(/^\/calendar\/v3\/calendars(?:\/([^/]+))?(?:\/events(?:\/([^/]+))?)?$/)
+    if (!m) return res({}, 404)
+    const [, calId, evId] = m
+    if (!calId) {
+      const id = `cal${++made}@group.calendar.google.com`
+      cals.set(id, { summary: body.summary, events: new Map() })
+      return res({ id, summary: body.summary })
+    }
+    const cal = cals.get(decodeURIComponent(calId))
+    if (!cal) return res({ error: 'notFound' }, 404)
+    if (!u.pathname.includes('/events')) return res({ id: decodeURIComponent(calId) })
+    if (!evId && method === 'GET') return res({ items: [...cal.events.values()].filter((e) => e.status !== 'cancelled') })
+    if (!evId && method === 'POST') {
+      if (cal.events.has(body.id)) return res({ error: 'duplicate' }, 409)
+      cal.events.set(body.id, { ...body, start: { dateTime: `${body.start.dateTime}+01:00` } })
+      return res(body)
+    }
+    if (method === 'PUT') {
+      cal.events.set(evId, { ...body, start: { dateTime: `${body.start.dateTime}+01:00` } })
+      return res(body)
+    }
+    if (method === 'DELETE') {
+      const e = cal.events.get(evId)
+      if (!e || e.status === 'cancelled') return res({}, 410)
+      e.status = 'cancelled'
+      return res(null, 204)
+    }
+    return res({}, 400)
+  }
+  const deps = { fetch: fake, token: async () => 'tok', base: 'https://fake.test/calendar/v3' }
+  const sync = (r, calendarId, day = today) => syncReminders(deps, { calendarId, rows: r, today: day, tz: 'Africa/Casablanca', appUrl: app })
+  const live = (id) => [...cals.get(id).events.values()].filter((e) => e.status !== 'cancelled')
+
+  const s1 = await sync(rows, null)
+  ok('sync: creates the app calendar and writes every reminder', cals.get(s1.calendarId)?.summary === CAL_NAME && s1.created === plan.length && live(s1.calendarId).length === plan.length)
+  const ev = live(s1.calendarId)[0]
+  ok('sync: at 9:00 in the owner time zone, a phone notification at that time, not busy', ev.start.dateTime.includes('T09:00:00') && ev.reminders.overrides[0].method === 'popup' && ev.reminders.overrides[0].minutes === 0 && ev.transparency === 'transparent' && ev.extendedProperties.private.kh === '1')
+  const s2 = await sync(rows, s1.calendarId)
+  ok('sync: nothing changed → nothing written', s2.created === 0 && s2.updated === 0 && s2.deleted === 0 && s2.calendarId === s1.calendarId)
+  const moved = rows.map((r) => (r.id === 'a1' ? { ...r, due_date: addDays(today, 100) } : r))
+  const s3 = await sync(moved, s1.calendarId)
+  ok('sync: a deadline that moved moves its reminders (same events, updated)', s3.updated === 4 && s3.created === 0 && s3.deleted === 0)
+  const s4 = await sync(moved.filter((r) => r.id !== 'a2'), s1.calendarId)
+  ok('sync: a deadline done or deleted takes its reminders away', s4.deleted === 2 && live(s1.calendarId).length === plan.length - 2)
+  const s5 = await sync(moved, s1.calendarId)
+  ok('sync: it comes back → its reminders come back (the cancelled events revived)', s5.created === 2 && live(s1.calendarId).length === plan.length)
+  const s6 = await sync(moved, s1.calendarId, addDays(today, 35))
+  ok('sync: days pass → the reminders already past are removed, none rewritten', s6.created === 0 && s6.deleted > 0 && live(s1.calendarId).every((e) => e.start.dateTime.slice(0, 10) >= addDays(today, 35)))
+  cals.delete(s1.calendarId)
+  const s7 = await sync(rows, s1.calendarId)
+  ok('sync: the calendar was deleted by hand → a new one is made', s7.calendarId !== s1.calendarId && s7.created === plan.length)
+  failNext = 1
+  let err = null
+  try {
+    await sync(rows, s7.calendarId)
+  } catch (e) {
+    err = e
+  }
+  ok('sync: an expired permission is reported as such (no half-written state claimed)', err instanceof CalendarError && err.auth)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

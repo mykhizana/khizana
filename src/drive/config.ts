@@ -7,3 +7,5 @@ export const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string
 export const DRIVE_API = (import.meta.env.VITE_DRIVE_API as string | undefined)?.trim() || 'https://www.googleapis.com'
 export const DRIVE_FAKE = import.meta.env.VITE_DRIVE_FAKE === '1'
 export const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.appdata']
+/** the phone reminders of the deadline radar: a calendar of the app's own, nothing else (asked only when the owner turns them on) */
+export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.app.created'

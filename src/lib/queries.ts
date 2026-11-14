@@ -2,6 +2,7 @@
 import { QueryClient, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
 import { api } from '@/db/api'
+import { MODE } from '@/lib/config'
 import { aiMode } from '@/ai/transport'
 import { queue } from '@/pipeline/queue'
 import type { SearchFilters } from './types'
@@ -17,6 +18,8 @@ export function refreshAll() {
 queue.onDocDone = (id) => {
   void queryClient.invalidateQueries({ queryKey: ['doc', id] })
   void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'doc' })
+  // a document read may bring new deadlines: the phone reminders follow a minute later
+  if (MODE === 'local') void import('@/drive/reminders').then(({ reminders }) => reminders.soon())
 }
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: api.overview })

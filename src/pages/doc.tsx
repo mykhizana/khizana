@@ -483,11 +483,12 @@ export default function DocPage() {
             </Card>
           )}
 
-          {doc.deadlines.length > 0 && (
+          {!doc.deleted_at && (
             <Card className="p-5">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
                 <CalendarClock className="size-4 text-brand-600" /> الآجال
               </h3>
+              {doc.deadlines.length === 0 && <p className="text-sm text-muted">لا موعد لهذه الوثيقة.</p>}
               <ul className="space-y-2">
                 {doc.deadlines.map((d) => (
                   <li key={d.id} className="flex items-center justify-between gap-3 text-sm">
@@ -501,12 +502,19 @@ export default function DocPage() {
                         onClick={async () => {
                           await api.deadlineDone(d.id, !d.done)
                           await refresh()
+                          if (MODE === 'local') void import('@/drive/reminders').then(({ reminders }) => reminders.soon())
                         }}
                       />
                     </span>
                   </li>
                 ))}
               </ul>
+              <Link
+                to={`/deadlines?doc=${doc.id}&title=${encodeURIComponent(docTitle(doc))}`}
+                className="mt-3 inline-block text-sm font-medium text-brand-700 hover:underline dark:text-brand-200"
+              >
+                أضف موعداً لهذه الوثيقة
+              </Link>
             </Card>
           )}
 

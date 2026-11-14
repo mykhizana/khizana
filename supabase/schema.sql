@@ -1936,6 +1936,52 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+-- the deadline radar: every deadline the caller may see (a closed vault hides its documents' ones)
+create or replace function public.kh_deadlines_list(p jsonb default '{}') returns jsonb
+language sql stable set search_path = public, extensions as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'due_date', x.due_date, 'title', x.title, 'kind', x.kind, 'done', x.done,
+      'document_id', x.document_id, 'doc_title', coalesce(d.title_ar, d.title, d.file_name), 'doc_type', d.doc_type,
+      'vault', coalesce(d.sensitivity = 'vault', false)) order by x.done, x.due_date), '[]'::jsonb)
+  from public.kh_deadlines x left join public.kh_documents d on d.id = x.document_id
+  where x.owner_id = auth.uid() and (x.document_id is null or d.deleted_at is null)
+    and (coalesce((p ->> 'with_done')::boolean, false) or not x.done)
+$$;
+
+-- what the phone reminders (Google Calendar) are made of: every open deadline, the vault's included,
+-- but those without their title or their document's (a lock screen must not show them). SECURITY
+-- DEFINER so a closed vault does not delete its reminders; only the caller's own rows.
+create or replace function public.kh_reminders_source(p jsonb default '{}') returns jsonb
+language sql stable security definer set search_path = public, extensions as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'due_date', x.due_date, 'kind', x.kind,
+      'title', case when d.sensitivity = 'vault' then null else x.title end,
+      'document_id', x.document_id,
+      'doc_title', case when d.sensitivity = 'vault' then null else coalesce(d.title_ar, d.title, d.file_name) end,
+      'vault', coalesce(d.sensitivity = 'vault', false)) order by x.due_date), '[]'::jsonb)
+  from public.kh_deadlines x left join public.kh_documents d on d.id = x.document_id
+  where x.owner_id = auth.uid() and not x.done and (x.document_id is null or d.deleted_at is null)
+$$;
+
+-- a deadline added by the owner (with or without a document); the same one twice is one row
+create or replace function public.kh_deadline_add(p jsonb) returns jsonb
+language plpgsql set search_path = public, extensions as $$
+declare did uuid := public.kh_uuid(p ->> 'document_id'); due date := public.kh_date(p ->> 'due_date');
+        t text := nullif(btrim(coalesce(p ->> 'title', '')), ''); k text := coalesce(nullif(p ->> 'kind', ''), 'reminder'); nid uuid;
+begin
+  if due is null or t is null then raise exception 'a title and a date are needed'; end if;
+  if k not in ('expiry', 'action', 'reminder') then k := 'reminder'; end if;
+  nid := public.kh_key_uuid('deadline|' || coalesce(did::text, 'none') || '|' || k || '|' || due::text || case when did is null then '|' || t else '' end);
+  insert into public.kh_deadlines (id, document_id, kind, due_date, title) values (nid, did, k, due, left(t, 300))
+  on conflict (id) do update set title = excluded.title, done = false;
+  return jsonb_build_object('id', nid);
+end $$;
+
+create or replace function public.kh_deadline_delete(p jsonb) returns jsonb
+language plpgsql set search_path = public, extensions as $$
+begin
+  delete from public.kh_deadlines where id = public.kh_uuid(p ->> 'id') and owner_id = auth.uid();
+  return jsonb_build_object('ok', true);
+end $$;
+
 -- a full copy of the owner's rows (files are copied by the app); used for backups and moving to the cloud
 create or replace function public.kh_export(p jsonb default '{}') returns jsonb
 language plpgsql stable set search_path = public, extensions as $$

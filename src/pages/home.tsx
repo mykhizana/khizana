@@ -183,6 +183,9 @@ export default function Home() {
             ) : (
               <p className="mt-2 text-sm text-muted">تواريخ انتهاء الجواز وبطاقة الإقامة والتأمين والعقود تظهر هنا تلقائياً.</p>
             )}
+            <Link to="/deadlines" className="mt-3 inline-block text-sm font-medium text-brand-700 hover:underline dark:text-brand-200">
+              كل الآجال والتذكير على الهاتف ←
+            </Link>
           </Card>
         </div>
 
