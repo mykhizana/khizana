@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Check, Merge, Pencil, Search, User } from 'lucide-react'
+import { ArrowRight, Check, Merge, Network, Pencil, Search, User } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -136,9 +136,14 @@ export default function PersonPage() {
 
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-ink">وثائقه عبر السنوات</h2>
-        <LinkButton to={`/search?person=${e.id}`} variant="secondary" size="sm" icon={Search}>
-          ابحث داخلها
-        </LinkButton>
+        <div className="flex flex-wrap gap-2">
+          <LinkButton to={`/relations?center=${e.id}`} variant="ghost" size="sm" icon={Network}>
+            شبكة صلاته
+          </LinkButton>
+          <LinkButton to={`/search?person=${e.id}`} variant="secondary" size="sm" icon={Search}>
+            ابحث داخلها
+          </LinkButton>
+        </div>
       </div>
       <div className="space-y-6">
         {byYear.map(([y, docs]) => (

@@ -439,6 +439,35 @@ ok('radar list: a closed vault hides its deadlines', !(await call('kh_deadlines_
   ok('references: another account sees none of them', (await call('kh_references')).length === 0)
   current = A
 }
+// the map of relations (people, bodies, places)
+{
+  const g = await call('kh_entity_graph')
+  const prof = g.nodes.find((n) => n.name === 'محمد بنعلي')
+  const fac = g.nodes.find((n) => n.kind === 'org' && n.name.includes('كلية العلوم القانونية'))
+  const city = g.nodes.find((n) => n.kind === 'place' && n.name === 'تطوان')
+  ok('graph: people, bodies and places are points, sized by their documents', !!prof && !!fac && !!city && prof.count >= 2)
+  const line = g.edges.find((e) => [e.s, e.t].includes(prof.id) && [e.s, e.t].includes(fac.id))
+  ok('graph: a line between two that share documents, weighted by how many', !!line && line.w >= 2 && g.edges.every((e) => e.s < e.t))
+  const shared = await call('kh_entity_pair', { a: prof.id, b: fac.id })
+  ok('graph: the documents a line stands for', shared.length === line.w && shared.some((d) => d.id === d1.id))
+  const people = await call('kh_entity_graph', { kinds: 'person' })
+  ok('graph: only the kinds asked for', people.nodes.length > 0 && people.nodes.every((n) => n.kind === 'person'))
+  const around = await call('kh_entity_graph', { center: city.id })
+  ok('graph: around one of them (it and those it shares documents with)', around.nodes.some((n) => n.id === city.id) && around.nodes.some((n) => n.id === prof.id) && around.nodes.every((n) => n.id === city.id || around.edges.some((e) => [e.s, e.t].includes(n.id))))
+  ok('graph: the lightest lines can be left out', (await call('kh_entity_graph', { min: 99 })).edges.length === 0)
+  // the closed vault: its documents link nobody
+  const sec = await call('kh_doc_create', { file_name: 'secret.pdf', page_count: 1, pages: [{ page_no: 1, text: 'سري' }] })
+  await call('kh_doc_apply_ai', { id: sec.id, card: card({ people: [{ name_ar: 'شخص من الخزنة', name_latin: 'Vault Person', honorific: null, role: 'mentioned', as_written: 'شخص من الخزنة' }] }), mode: 'claude' })
+  await call('kh_doc_update', { id: sec.id, fields: { sensitivity: 'vault' } })
+  claims = '{"aal":"aal1"}'
+  ok('graph: a closed vault hides who appears only in its documents', !(await call('kh_entity_graph')).nodes.some((n) => n.name === 'شخص من الخزنة'))
+  claims = '{"aal":"aal2"}'
+  ok('graph: … shown again once it is open', (await call('kh_entity_graph')).nodes.some((n) => n.name === 'شخص من الخزنة'))
+  claims = '{"aal":"aal1"}'
+  current = B
+  ok('graph: another account sees an empty map', (await call('kh_entity_graph')).nodes.length === 0 && (await call('kh_entity_pair', { a: prof.id, b: fac.id })).length === 0)
+  current = A
+}
 ok('vault metadata hidden: corrections / links', (await asUser(`select 1 from public.kh_corrections where document_id = $1 union all select 1 from public.kh_links where from_id = $1 or to_id = $1`, [pass1.id])).length === 0)
 ok('vault metadata hidden: its pages and fingerprints', (await asUser(`select 1 from public.kh_pages where document_id = $1 union all select 1 from public.kh_lsh where document_id = $1`, [pass1.id])).length === 0)
 

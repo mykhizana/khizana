@@ -8,6 +8,7 @@ import type {
   DupCandidate,
   Entity,
   EntityDetail,
+  Graph,
   Location,
   Overview,
   Proposal,
@@ -118,6 +119,10 @@ export const api = {
   entity: (id: string) => call<EntityDetail | null>('kh_entity_get', { id }),
   entitySave: (p: Record<string, unknown>) => call('kh_entity_save', p),
   entityMerge: (from_id: string, into_id: string) => call('kh_entity_merge', { from_id, into_id }),
+
+  /** the map of relations; center: one of them and those around it */
+  entityGraph: (p: { kinds?: string; limit?: number; center?: string | null; min?: number }) => call<Graph>('kh_entity_graph', p),
+  entityPair: (a: string, b: string) => call<{ id: string; title: string; doc_type: string | null; doc_date: string | null }[]>('kh_entity_pair', { a, b }),
 
   locations: () => call<Location[]>('kh_locations_list'),
   locationSave: (p: Partial<Location> & { name: string }) => call<Location>('kh_location_save', p),

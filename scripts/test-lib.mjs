@@ -461,5 +461,34 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('word: Arabic paragraphs right-to-left, titles in italics (Arabic italics too)', (xml.match(/<w:bidi\/>/g) ?? []).length >= 3 && /<w:rPr><w:rtl\/><w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">القانون الإداري/.test(xml) && /<w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">Philosophy &amp; Technology/.test(xml))
 }
 
+// ------------------------------------------------------------ the map of relations: its layout
+{
+  const { layout, neighbours } = await import('../src/lib/graph.ts')
+  // two groups of four, joined by one line; and one point alone
+  const nodes = ['a1', 'a2', 'a3', 'a4', 'b1', 'b2', 'b3', 'b4', 'lone'].map((id, i) => ({ id, count: 10 - i }))
+  const edges = []
+  for (const g of ['a', 'b']) for (let i = 1; i <= 4; i++) for (let j = i + 1; j <= 4; j++) edges.push({ s: `${g}${i}`, t: `${g}${j}`, w: 3 })
+  edges.push({ s: 'a1', t: 'b1', w: 1 })
+  const p = layout(nodes, edges, { size: 1000 })
+  const d = (u, v) => Math.hypot(p.get(u).x - p.get(v).x, p.get(u).y - p.get(v).y)
+  const inside = [...p.values()].every((q) => q.x >= 0 && q.x <= 1000 && q.y >= 0 && q.y <= 1000)
+  ok('graph layout: every point inside the picture', p.size === 9 && inside)
+  const within = (d('a2', 'a3') + d('b2', 'b3')) / 2
+  const across = (d('a2', 'b3') + d('a3', 'b2')) / 2
+  ok('graph layout: points that share documents are close, the others apart', within < across * 0.6, `${within.toFixed(0)} vs ${across.toFixed(0)}`)
+  const minGap = Math.min(...nodes.flatMap((u, i) => nodes.slice(i + 1).map((v) => d(u.id, v.id))))
+  ok('graph layout: no two points on top of each other', minGap > 20, minGap.toFixed(1))
+  const again = layout(nodes, edges, { size: 1000 })
+  ok('graph layout: the same map, the same picture (no randomness)', [...p].every(([id, q]) => again.get(id).x === q.x && again.get(id).y === q.y))
+  ok('graph layout: one point, in the middle; none, nothing', layout([{ id: 'x', count: 1 }], []).get('x').x === 500 && layout([], []).size === 0)
+  ok('graph: neighbours, the heaviest line first', neighbours('a1', edges).map((x) => x.id).join() === 'a2,a3,a4,b1')
+  // groups that share nothing: each keeps room of its own (none squeezed into a corner)
+  const apart = edges.filter((e) => !(e.s === 'a1' && e.t === 'b1'))
+  const q = layout(nodes, apart, { size: 1000 })
+  const dq = (u, v) => Math.hypot(q.get(u).x - q.get(v).x, q.get(u).y - q.get(v).y)
+  const tight = Math.min(...['a', 'b'].flatMap((g) => [1, 2, 3].flatMap((i) => [2, 3, 4].filter((j) => j > i).map((j) => dq(`${g}${i}`, `${g}${j}`)))))
+  ok('graph layout: separate groups each keep room of their own', q.size === 9 && [...q.values()].every((v) => v.x >= 0 && v.x <= 1000 && v.y >= 0 && v.y <= 1000) && tight > 80, tight.toFixed(0))
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

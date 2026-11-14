@@ -58,6 +58,10 @@ export type DocLink = {
 export type Deadline = { id: string; document_id: string; kind: string; due_date: string; title: string; done: boolean }
 
 /** a row of the deadline radar */
+// the map of relations (kh_entity_graph): points and the lines between those that share documents
+export type GraphNode = { id: string; name: string; name_latin: string | null; kind: 'person' | 'org' | 'place'; honorific: string | null; count: number }
+export type Graph = { nodes: GraphNode[]; edges: { s: string; t: string; w: number }[] }
+
 // «مراجعي»: a research document and its bibliographic record
 export type RefItem = {
   id: string

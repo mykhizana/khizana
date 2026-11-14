@@ -1689,6 +1689,61 @@ language sql stable set search_path = public, extensions as $$
   from public.kh_entities e where e.id = public.kh_uuid(p ->> 'id')
 $$;
 
+-- the map of relations: people, bodies and places as points, a line between two of them when they appear
+-- in the same documents (weight: in how many). p.center: one of them and those around it; p.kinds:
+-- 'person,org,place'; p.limit: how many points; p.min: the lightest line kept. The documents of the
+-- closed vault count for nothing (row security on the links).
+create or replace function public.kh_entity_graph(p jsonb default '{}') returns jsonb
+language sql stable set search_path = public, extensions as $$
+  with de as (
+    select distinct x.document_id, x.entity_id
+    from public.kh_doc_entities x
+    join public.kh_documents d on d.id = x.document_id and d.deleted_at is null
+    join public.kh_entities e on e.id = x.entity_id and e.merged_into is null
+    where x.owner_id = auth.uid()
+      and (coalesce(p ->> 'kinds', '') = '' or e.kind = any (string_to_array(p ->> 'kinds', ',')))
+  ),
+  counts as (select entity_id, count(*)::int n from de group by entity_id),
+  lim as (select least(greatest(coalesce((p ->> 'limit')::int, 80), 5), 300) l),
+  around as (
+    select b.entity_id, count(*) n
+    from de a join de b on b.document_id = a.document_id and b.entity_id <> a.entity_id
+    where a.entity_id = public.kh_uuid(p ->> 'center')
+    group by b.entity_id order by count(*) desc, b.entity_id limit (select l from lim)
+  ),
+  pool as (
+    select entity_id from (select entity_id from counts order by n desc, entity_id limit (select l from lim)) t
+    where public.kh_uuid(p ->> 'center') is null
+    union
+    select entity_id from around
+    union
+    select entity_id from counts where entity_id = public.kh_uuid(p ->> 'center')
+  ),
+  pairs as (
+    select a.entity_id s, b.entity_id t, count(*)::int w
+    from de a join de b on b.document_id = a.document_id and a.entity_id < b.entity_id
+    where a.entity_id in (select entity_id from pool) and b.entity_id in (select entity_id from pool)
+    group by a.entity_id, b.entity_id
+    having count(*) >= greatest(coalesce((p ->> 'min')::int, 1), 1)
+  )
+  select jsonb_build_object(
+    'nodes', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'name', e.name, 'name_latin', e.name_latin, 'kind', e.kind,
+                'honorific', e.honorific, 'count', c.n) order by c.n desc, e.name)
+              from pool join counts c on c.entity_id = pool.entity_id join public.kh_entities e on e.id = pool.entity_id), '[]'::jsonb),
+    'edges', coalesce((select jsonb_agg(jsonb_build_object('s', s, 't', t, 'w', w) order by w desc) from pairs), '[]'::jsonb))
+$$;
+
+-- the documents two of them share (a line of the map)
+create or replace function public.kh_entity_pair(p jsonb) returns jsonb
+language sql stable set search_path = public, extensions as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'title', coalesce(d.title_ar, d.title, d.file_name), 'doc_type', d.doc_type,
+      'doc_date', d.doc_date) order by d.doc_date desc nulls last, d.created_at desc), '[]'::jsonb)
+  from public.kh_documents d
+  where d.owner_id = auth.uid() and d.deleted_at is null
+    and exists (select 1 from public.kh_doc_entities x where x.document_id = d.id and x.entity_id = public.kh_uuid(p ->> 'a'))
+    and exists (select 1 from public.kh_doc_entities x where x.document_id = d.id and x.entity_id = public.kh_uuid(p ->> 'b'))
+$$;
+
 create or replace function public.kh_entity_save(p jsonb) returns jsonb
 language plpgsql set search_path = public, extensions as $$
 declare eid uuid := public.kh_uuid(p ->> 'id');

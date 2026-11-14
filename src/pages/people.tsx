@@ -1,10 +1,10 @@
-import { Building2, MapPin, Search, User, Users } from 'lucide-react'
+import { Building2, MapPin, Network, Search, User, Users } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { roleLabel } from '@/lib/labels'
 import { useEntities } from '@/lib/queries'
 import { PageHeader } from '@/ui/bits'
-import { Badge, Card, Empty, Input, Segmented, Skeleton } from '@/ui/kit'
+import { Badge, Card, Empty, Input, LinkButton, Segmented, Skeleton } from '@/ui/kit'
 
 const ROLE_FILTERS = [
   { key: '', label: 'الكل' },
@@ -24,7 +24,16 @@ export default function PeoplePage() {
 
   return (
     <div>
-      <PageHeader title="الأشخاص والجهات" icon={Users} subtitle="كل دكتور وأستاذ وجهة وردت في وثائقك، بأسمائه المختلفة موحّدة." />
+      <PageHeader
+        title="الأشخاص والجهات"
+        icon={Users}
+        subtitle="كل دكتور وأستاذ وجهة وردت في وثائقك، بأسمائه المختلفة موحّدة."
+        actions={
+          <LinkButton to="/relations" variant="secondary" icon={Network}>
+            خريطة العلاقات
+          </LinkButton>
+        }
+      />
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <Segmented
           value={kind}
