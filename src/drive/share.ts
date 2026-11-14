@@ -11,8 +11,12 @@ export const SHARE_FOLDER = 'خزانة — ملفات مشتركة'
 export const SHARE_DAYS = [1, 7, 30, 90] as const
 type Db = { call: <T = unknown>(fn: string, p?: unknown) => Promise<T> }
 export type Published = { id: string; url: string; expires_at: string; file: string }
-/** who tidies: this device and its archive (copies of another archive are never touched) */
-export type SweepContext = { device: string; archive: string | null; now?: number }
+/**
+ * Who tidies: this device and its archive (copies of another archive are never touched). `linked`: a
+ * device outside the archive knows only its own links, so it judges only its own copies by their state;
+ * any copy past its own end date goes, whoever made it.
+ */
+export type SweepContext = { device: string; archive: string | null; linked?: boolean; now?: number }
 type LinkState = 'live' | 'expired' | 'revoked' | 'deleted' | 'unknown' | 'gone'
 
 const DAY = 864e5
@@ -103,11 +107,10 @@ export async function sweepShares(drive: Drive, db: Db, ctx: SweepContext): Prom
     const exp = Date.parse(f.appProperties?.exp ?? '')
     const age = now - (Date.parse(f.createdTime ?? '') || now)
     const mine = !!f.appProperties?.dev && f.appProperties.dev === ctx.device
+    const knows = ctx.linked !== false || mine
     const ended =
       (Number.isFinite(exp) && exp <= now) ||
-      st === 'expired' ||
-      st === 'revoked' ||
-      st === 'deleted' ||
+      (knows && (st === 'expired' || st === 'revoked' || st === 'deleted')) ||
       ((st === 'unknown' || st === 'gone') && mine && age > DAY)
     if (!ended) {
       kept.add(sid)

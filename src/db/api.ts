@@ -83,8 +83,10 @@ export const api = {
   /** `foreign`: another device's document (device mode) — it reads it itself; see kh_pending */
   pending: () => call<{ id: string; state: string; detail: string | null; title: string; needs_ocr: boolean; page_count: number; foreign?: boolean }[]>('kh_pending'),
   updateDoc: (id: string, fields: Record<string, unknown>, by_owner = true) => call<{ ok: boolean; sealed?: boolean }>('kh_doc_update', { id, fields, by_owner }),
-  /** into the trash; `links`: the share links of these documents taken back with them */
-  deleteDocs: (ids: string[]) => call<{ ok: boolean; count: number; links?: number }>('kh_doc_delete', { ids }),
+  /** into the trash; `revokeLinks`: also take back the open share links holding them (the owner was asked) */
+  deleteDocs: (ids: string[], revokeLinks = false) => call<{ ok: boolean; count: number; links?: number }>('kh_doc_delete', { ids, revoke_links: revokeLinks }),
+  /** how many open share links hold these documents (asked before the trash) */
+  docLinks: (ids: string[]) => call<{ count: number }>('kh_doc_links', { ids }),
   restoreDoc: (id: string) => call('kh_doc_restore', { id }),
   purgeDocs: (p: { ids?: string[]; trash_older_than_days?: number }) => call<{ paths: string[]; count: number }>('kh_doc_purge', p),
   splitDoc: (id: string, segments: { first_page: number; last_page: number; title_ar?: string }[]) => call<{ ids: string[]; removed_paths: string[] }>('kh_doc_split', { id, segments }),

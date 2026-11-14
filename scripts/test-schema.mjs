@@ -437,7 +437,7 @@ ok('radar list: a closed vault hides its deadlines', !(await call('kh_deadlines_
   ok('order: reordering with the vault closed keeps the vault paper in its place', (await call('kh_dossier_get', { id: dv.id })).items.map((x) => x.document_id).join() === [vdoc.id, d2.id, d1.id].join())
   await call('kh_dossier_add', { id: dv.id, document_id: d3.id })
   ok('order: a paper added goes after all, the vault ones included', (await call('kh_dossier_get', { id: dv.id })).items.at(-1)?.document_id === d3.id)
-  const trashed = await call('kh_doc_delete', { ids: [vdoc.id] })
+  const trashed = await call('kh_doc_delete', { ids: [vdoc.id], revoke_links: true })
   ok('trash: a paper thrown away takes back the links whose PDF holds it', trashed.links === 1 && (await call('kh_shares_state', { ids: [link.id] }))[link.id] === 'revoked')
   claims = '{"aal":"aal1"}'
   const r0 = (await call('kh_dossier_get', { id: dv.id })).plan.requirements[0]
@@ -447,6 +447,37 @@ ok('radar list: a closed vault hides its deadlines', !(await call('kh_deadlines_
   claims = '{"aal":"aal2"}'
   await call('kh_doc_restore', { id: vdoc.id })
   await call('kh_dossier_delete', { id: dv.id, force: true })
+  claims = '{"aal":"aal1"}'
+}
+// the second review pass: a paper sealed after its link, links noted before their documents, the trash
+{
+  claims = '{"aal":"aal2"}'
+  const late = await call('kh_doc_create', { file_name: 'passport-late.jpg', page_count: 1, pages: [{ page_no: 1, text: 'pasaporte' }] })
+  const dl = await call('kh_dossier_save', { name: 'ملف ختم لاحقاً' })
+  await call('kh_dossier_set_items', { id: dl.id, items: [{ document_id: d1.id }, { document_id: late.id }] })
+  const l1 = await call('kh_share_add', { collection_id: dl.id, documents: [d1.id, late.id], drive_file: 'fl', url: 'ul' })
+  const legacy = await call('kh_share_add', { collection_id: dl.id, drive_file: 'fo', url: 'uo' }) // as noted before the documents were
+  await asUser(`update public.kh_share_links set documents = null where id = $1`, [legacy.id])
+  claims = '{"aal":"aal1"}'
+  ok('vault link: a link of ordinary papers shows with the vault closed', (await call('kh_shares_list')).some((x) => x.id === l1.id))
+  await call('kh_doc_update', { id: late.id, fields: { sensitivity: 'vault' } }) // sealed after the link was made
+  const seen = await call('kh_shares_list')
+  ok('vault link: a paper sealed after the link was made hides the link while the vault is closed', !seen.some((x) => x.id === l1.id))
+  ok('vault link: … a link noted before its documents too (judged by its dossier)', !seen.some((x) => x.id === legacy.id))
+  claims = '{"aal":"aal2"}'
+  ok('vault link: with the vault open both show, marked as holding vault papers', (await call('kh_shares_list')).filter((x) => [l1.id, legacy.id].includes(x.id) && x.vault).length === 2)
+  // the trash asks: nothing is taken back unless the owner says so
+  ok('trash: the app can ask how many open links hold a paper', (await call('kh_doc_links', { ids: [d1.id] })).count >= 2)
+  const keep = await call('kh_doc_delete', { ids: [d1.id] })
+  ok('trash: without the owner saying so, the links stay open', keep.links === 0 && (await call('kh_shares_state', { ids: [l1.id] }))[l1.id] === 'live')
+  await call('kh_doc_restore', { id: d1.id })
+  claims = '{"aal":"aal1"}'
+  const gone = await call('kh_doc_delete', { ids: [d1.id], revoke_links: true })
+  const st = await call('kh_shares_state', { ids: [l1.id, legacy.id] })
+  ok('trash: taken back when the owner says so — the closed vault’s links too', gone.links === 2 && st[l1.id] === 'revoked' && st[legacy.id] === 'revoked', JSON.stringify({ links: gone.links, st }))
+  claims = '{"aal":"aal2"}'
+  await call('kh_doc_restore', { id: d1.id })
+  await call('kh_dossier_delete', { id: dl.id, force: true })
   claims = '{"aal":"aal1"}'
 }
 // «مراجعي»: the bibliographic record of a research document

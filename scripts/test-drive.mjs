@@ -418,6 +418,19 @@ ok('…then the gap is stepped over and it goes in', !(await A.engine.meta()).he
   ok('sweep: the copies of another archive are not touched', fake.files.has(otherArchive))
   await sweepShares(client, db, at(31 * 864e5))
   ok('sweep: … the other device’s copy goes at its own end date', !fake.files.has(theirs))
+  // a device outside the archive: it judges only its own copies (and any copy past its end date)
+  const out = { device: 'dS', archive: null, linked: false }
+  const p7 = await publishShare(client, db, { pdf: pdfA4, name: 'سابع', days: 30, collection_id: dz.id, device: 'dS' })
+  const p8 = await publishShare(client, db, { pdf: pdfA4, name: 'ثامن', days: 30, collection_id: dz.id, device: 'dOther' })
+  await S.call('kh_share_revoke', { id: p7.id })
+  await S.call('kh_share_revoke', { id: p8.id })
+  const lateCopy = await stray({ dev: 'dOther', exp: new Date(Date.now() - 3600_000).toISOString() })
+  await sweepShares(client, db, out)
+  ok('sweep outside the archive: its own link taken back loses its copy', !fake.files.has(p7.file))
+  ok('sweep outside the archive: another device’s copy is left to the devices that know it', fake.files.has(p8.file))
+  ok('sweep outside the archive: … but any copy past its end date goes', !fake.files.has(lateCopy))
+  await sweepShares(client, db, here)
+  ok('sweep in the archive: the other device’s taken-back link loses its copy', !fake.files.has(p8.file))
 }
 
 // ------------------------------------------------------------ two devices creating an archive at the same moment

@@ -236,25 +236,25 @@ export function SharePanel({
         )}
       </div>
       {MODE === 'local' && (
-      <div className="rounded-xl border border-line p-3">
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="رابط مشاركة يفتح لمدة" className="w-40">
-            <Select value={String(days)} onChange={(e) => setDays(Number(e.target.value))}>
-              {SHARE_DAYS.map((d) => (
-                <option key={d} value={d}>
-                  {DAYS_LABEL[d]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Button variant="outline" icon={Link2} loading={busy === 'link'} disabled={!!busy} onClick={() => void run('link')}>
-            أنشئ رابطاً
-          </Button>
+        <div className="rounded-xl border border-line p-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <Field label="رابط مشاركة يفتح لمدة" className="w-40">
+              <Select value={String(days)} onChange={(e) => setDays(Number(e.target.value))}>
+                {SHARE_DAYS.map((d) => (
+                  <option key={d} value={d}>
+                    {DAYS_LABEL[d]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Button variant="outline" icon={Link2} loading={busy === 'link'} disabled={!!busy} onClick={() => void run('link')}>
+              أنشئ رابطاً
+            </Button>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            يوضع الملف في Google Drive داخل مجلد «خزانة — ملفات مشتركة»، ويفتحه من معه الرابط فقط (لا يظهر في أي بحث). حين تسحبه تُحذف النسخة فيتوقف في الحال. وعند انتهاء مدته تحذفها خزانة إن كانت مفتوحة على أحد أجهزتك، وإلا فعند أول فتح لها بعد ذلك: Google Drive لا يوقف الرابط وحده.
+          </p>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-muted">
-          يوضع الملف في Google Drive داخل مجلد «خزانة — ملفات مشتركة»، ويفتحه من معه الرابط فقط (لا يظهر في أي بحث). حين تسحبه تُحذف النسخة فيتوقف في الحال. وعند انتهاء مدته تحذفها خزانة إن كانت مفتوحة على أحد أجهزتك، وإلا فعند أول فتح لها بعد ذلك: Google Drive لا يوقف الرابط وحده.
-        </p>
-      </div>
       )}
       {progress && (
         <div>

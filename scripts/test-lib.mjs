@@ -524,5 +524,15 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('citation: «Cité par» on a reference ending with «s.d.» takes no second full stop', plain(citedBy(sd)).endsWith('Paris, s.d.') && !plain(citedBy(sd)).endsWith('..'), plain(citedBy(sd)))
 }
 
+// ------------------------------------------------------------ the second review pass (the Constitution, mentioned or carried out)
+{
+  const { legalRank } = await import('../src/lib/bib.ts')
+  const F = (legal_type, purpose, title = '') => ({ kind: 'legal', lang: 'latin', authors: [], title, legal_type, purpose })
+  ok('legal rank: a dahir promulgating the organic law on the Constitutional Court is an organic law', legalRank(F('Dahir', 'portant promulgation de la loi organique n° 066-13 relative à la Cour constitutionnelle')) === 1)
+  ok('legal rank: a dahir for a law «prévu par l’article 27 de la Constitution» is a law', legalRank(F('Dahir', "portant promulgation de la loi n° 31-13 relative au droit d'accès à l'information prévu par l'article 27 de la Constitution")) === 2)
+  ok('legal rank: an organic law on «المحكمة الدستورية» with no kind given is an organic law', legalRank({ kind: 'legal', lang: 'ar', authors: [], legal_type: '', purpose: '', title: 'القانون التنظيمي رقم 066.13 المتعلق بالمحكمة الدستورية' }) === 1)
+  ok('legal rank: the Constitution itself, with or without a kind', legalRank(F('Dahir', 'portant promulgation du texte de la Constitution')) === 0 && legalRank({ kind: 'legal', lang: 'ar', authors: [], legal_type: '', purpose: '', title: 'دستور المملكة المغربية لسنة 2011' }) === 0)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

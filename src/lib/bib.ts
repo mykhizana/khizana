@@ -268,21 +268,30 @@ export function legalRank(b: Bib): number {
   // decree). Only a promulgating dahir takes the rank of the text it carries out (constitution, organic
   // law, law). Without a kind, the heading is read instead.
   const type = (b.legal_type ?? '').trim()
-  const rest = `${b.purpose ?? ''} ${b.title ?? ''}`
-  const dahir = /ظهير|dahir/i.test(type)
-  const s = type && !dahir ? type : rest
-  if (dahir || !type) {
-    if (/^\s*(?:بتنفيذ|بإصدار)?\s*(?:نص\s+)?الدستور|constitution/i.test(s)) return 0
-    if (/(?:بتنفيذ|بإصدار)\s+القانون\s+التنظيمي|loi organique/i.test(s)) return 1
-    if (dahir) return 2
+  const rest = `${b.purpose ?? ''} ${b.title ?? ''}`.trim()
+  // a promulgating dahir: the text it carries out, named right after «بتنفيذ» / «portant promulgation»
+  // («الدستورية» / «constitutionnelle» or a mere mention of the Constitution do not make it the Constitution)
+  if (/ظهير|dahir/i.test(type)) {
+    if (/^(?:بتنفيذ|بإصدار)?\s*(?:نص\s+)?الدستور(?!\p{Script=Arabic})|promulgation\s+(?:du\s+texte\s+)?de\s+la\s+constitution\b/iu.test(rest)) return 0
+    if (/^(?:بتنفيذ|بإصدار)\s+القانون\s+التنظيمي|promulgation\s+de\s+la\s+loi\s+organique/iu.test(rest)) return 1
+    return 2
   }
-  if (/دستور|constitution/i.test(s)) return 0
-  if (/تنظيمي|organique/i.test(s)) return 1
-  if (/مرسوم\s+بقانون|décret-loi/i.test(s)) return 3
-  if (/مرسوم|décret/i.test(s)) return 4
-  if (/قرار|arrêté/i.test(s)) return 5
-  if (/دورية|منشور|circulaire/i.test(s)) return 6
-  if (/قانون|\bloi\b/i.test(s)) return 2
+  // otherwise the kind of text, from the first words of its kind (or of its heading when no kind is given)
+  const s = type || rest
+  if (/^(?:ال)?دستور(?!\p{Script=Arabic})|^constitution\b/iu.test(s)) return 0
+  if (/^(?:ال)?قانون\s+(?:ال)?تنظيمي|^loi\s+organique/iu.test(s)) return 1
+  if (/^مرسوم\s+بقانون|^décret-loi/iu.test(s)) return 3
+  if (/^مرسوم|^décret/iu.test(s)) return 4
+  if (/^قرار|^arrêté/iu.test(s)) return 5
+  if (/^(?:دورية|منشور)|^circulaire/iu.test(s)) return 6
+  if (/^(?:ال)?قانون|^loi\b/iu.test(s)) return 2
+  // and when the first words say nothing, anywhere in it (the Constitution only as a whole word)
+  if (/تنظيمي|organique/iu.test(s)) return 1
+  if (/مرسوم|décret/iu.test(s)) return 4
+  if (/قرار|arrêté/iu.test(s)) return 5
+  if (/دورية|منشور|circulaire/iu.test(s)) return 6
+  if (/الدستور(?!\p{Script=Arabic})|\bconstitution\b/iu.test(s)) return 0
+  if (/قانون|\bloi\b/iu.test(s)) return 2
   return 7
 }
 

@@ -203,10 +203,11 @@ export default function DocPage() {
   ].filter(Boolean) as string[]
 
   const del = async () => {
-    const r = await api.deleteDocs([doc.id])
+    const { shares, trashLinksChoice } = await import('@/lib/shares')
+    const r = await api.deleteDocs([doc.id], await trashLinksChoice([doc.id]))
     await refresh()
-    // its share links were taken back with it: their copies leave Drive now if Google is connected
-    if (r?.links) void import('@/lib/shares').then(({ shares }) => shares.sweep(true))
+    // its share links were taken back with it (the owner chose so): their copies leave Drive now if Google is connected
+    if (r?.links) void shares.sweep(true)
     toast(r?.links ? 'نُقلت إلى سلة المحذوفات، وسُحبت روابط مشاركتها' : 'نُقلت إلى سلة المحذوفات', {
       action: {
         label: 'تراجع',
