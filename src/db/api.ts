@@ -17,6 +17,10 @@ import type {
   Settings,
   UsageSummary,
   DeadlineItem,
+  Dossier,
+  DossierPlan,
+  DossierSummary,
+  ShareLink,
 } from '@/lib/types'
 
 async function call<T>(fn: string, p: unknown = {}): Promise<T> {
@@ -127,6 +131,18 @@ export const api = {
   deadlineDelete: (id: string) => call('kh_deadline_delete', { id }),
   /** every open deadline for the phone reminders (the vault's without titles) */
   remindersSource: () => call<ReminderSource[]>('kh_reminders_source'),
+  /** ready dossiers; with a document id, `has` tells whether it is already in each one */
+  dossiers: (document_id?: string) => call<DossierSummary[]>('kh_dossiers_list', document_id ? { document_id } : {}),
+  dossier: (id: string) => call<Dossier | null>('kh_dossier_get', { id }),
+  dossierSave: (p: { id?: string; new_id?: string; name?: string; notes?: string | null; plan?: DossierPlan | null }) => call<{ id: string }>('kh_dossier_save', p),
+  dossierDelete: (id: string, force = false) => call('kh_dossier_delete', { id, force }),
+  dossierSetItems: (id: string, items: { document_id: string; requirement?: string | null }[]) => call<{ ok: boolean; items: number }>('kh_dossier_set_items', { id, items }),
+  dossierAdd: (id: string, document_id: string, requirement?: string | null) => call('kh_dossier_add', { id, document_id, requirement }),
+  dossierRemove: (id: string, document_id: string) => call('kh_dossier_add', { id, document_id, remove: true }),
+  shares: (p: { open?: boolean; collection_id?: string; document_id?: string } = {}) => call<ShareLink[]>('kh_shares_list', p),
+  shareAdd: (p: { id: string; collection_id?: string | null; document_id?: string | null; label?: string | null; watermark?: string | null; expires_at: string; drive_file: string; permission_id: string; url: string }) =>
+    call<{ id: string; expires_at: string }>('kh_share_add', p),
+  shareRevoke: (id: string) => call('kh_share_revoke', { id }),
   exportAll: () => call<{ format: string; version: number; exported_at: string; tables: Record<string, unknown[]> }>('kh_export'),
   importAll: (backup: unknown) => call<{ ok: boolean; rows: number }>('kh_import', backup),
   vaultCount: () => call<{ count: number }>('kh_vault_count'),

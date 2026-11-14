@@ -391,5 +391,32 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('sync: an expired permission is reported as such (no half-written state claimed)', err instanceof CalendarError && err.auth)
 }
 
+// ------------------------------------------------------------ the checklist of a procedure (ready dossiers)
+{
+  const { cleanChecklist } = await import('../src/ai/checklist.ts')
+  const known = { 'doc-1': 'جواز السفر', 'doc-2': 'شهادة السكنى' }
+  const c = cleanChecklist(
+    {
+      procedure: ' تجديد بطاقة الإقامة ',
+      summary: 'تُقدَّم في مكتب الأجانب.',
+      requirements: [
+        { label: 'جواز السفر', status: 'Found', document_id: 'doc-1', note: 'صالح' },
+        { label: 'شهادة السكنى', status: 'expired', document_id: 'doc-2', note: '' },
+        { label: 'صورتان', status: 'missing', document_id: '', note: 'غير موجودة' },
+        { label: 'عقد العمل', status: 'found', document_id: 'invented-id', note: '' },
+        { label: '  ', status: 'found', document_id: 'doc-1' },
+        { label: 'التأمين الصحي', status: 'maybe', document_id: 'doc-1', note: 'x'.repeat(400) },
+        'garbage',
+      ],
+    },
+    known,
+  )
+  ok('checklist: statuses kept and read case-insensitively', c.requirements[0].status === 'found' && c.requirements[1].status === 'expired' && c.requirements[2].status === 'missing')
+  ok('checklist: a document id the tools never gave is dropped (the paper counts as missing)', c.requirements[3].document_id === null && c.requirements[3].status === 'missing')
+  ok('checklist: empty lines and junk are skipped, unknown statuses become «unsure», long notes are cut', c.requirements.length === 5 && c.requirements[4].status === 'unsure' && c.requirements[4].note.length === 300)
+  ok('checklist: procedure and summary trimmed; an empty note is null', c.procedure === 'تجديد بطاقة الإقامة' && c.summary === 'تُقدَّم في مكتب الأجانب.' && c.requirements[1].note === null)
+  ok('checklist: nothing usable → an empty list, no error', cleanChecklist(null, known).requirements.length === 0 && cleanChecklist({ requirements: 'x' }, known).requirements.length === 0)
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

@@ -175,6 +175,23 @@ export function driveClient(token: TokenSource, base = 'https://www.googleapis.c
       return (await request(`${api}/files/${encodeURIComponent(id)}?alt=media`, {}, { timeout: 10 * 60_000 })).blob()
     },
 
+    /** «anyone with the link can view» on a file the app made (drive.file allows it): the link, and the permission to take back */
+    async share(id: string): Promise<{ permissionId: string; link: string }> {
+      const target = encodeURIComponent(id)
+      const p = await json<{ id: string }>(`${api}/files/${target}/permissions?fields=id`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ type: 'anyone', role: 'reader', allowFileDiscovery: false }),
+      })
+      const f = await json<{ webViewLink?: string }>(`${api}/files/${target}?fields=webViewLink`)
+      return { permissionId: p.id, link: f.webViewLink ?? `https://drive.google.com/file/d/${id}/view` }
+    },
+
+    /** the link stops working (an already removed permission, or file, is fine) */
+    async unshare(id: string, permissionId: string): Promise<void> {
+      await request(`${api}/files/${encodeURIComponent(id)}/permissions/${encodeURIComponent(permissionId)}`, { method: 'DELETE' }, { ok404: true })
+    },
+
     /** removed for good (an already missing file is fine) */
     async remove(id: string): Promise<void> {
       await request(`${api}/files/${encodeURIComponent(id)}`, { method: 'DELETE' }, { ok404: true })

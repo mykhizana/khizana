@@ -9,6 +9,7 @@ import {
   Eye,
   FileWarning,
   EyeOff,
+  FolderCheck,
   FolderInput,
   Heart,
   HelpCircle,
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   RotateCcw,
   ScanText,
+  Share2,
   Tag,
   Trash2,
   Unlink,
@@ -42,6 +44,7 @@ import { CatPath, StateBadge, stateReason } from '@/ui/bits'
 import { downloadDoc } from '@/ui/download'
 import { Badge, Button, Card, Dialog, Field, IconButton, Input, Menu, MenuItem, Select, Skeleton, Textarea, cn } from '@/ui/kit'
 import { CategoryPicker, LocationPicker } from '@/ui/pickers'
+import { AddToDossier, ShareDocDialog } from '@/ui/share'
 import { Viewer } from '@/ui/viewer'
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -165,6 +168,8 @@ export default function DocPage() {
   const [edit, setEdit] = useState(false)
   const [moving, setMoving] = useState(false)
   const [locating, setLocating] = useState(false)
+  const [dossier, setDossier] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const page = sp.get('page') ? Number(sp.get('page')) : null
   const hl = sp.get('hl') ?? ''
 
@@ -276,6 +281,16 @@ export default function DocPage() {
                 <MenuItem icon={MapPin} onClick={() => (close(), setLocating(true))}>
                   مكان الورقة الأصلية
                 </MenuItem>
+                {!doc.deleted_at && (
+                  <>
+                    <MenuItem icon={FolderCheck} onClick={() => (close(), setDossier(true))}>
+                      أضف إلى ملف جاهز
+                    </MenuItem>
+                    <MenuItem icon={Share2} onClick={() => (close(), setSharing(true))}>
+                      شارك (PDF أو رابط)
+                    </MenuItem>
+                  </>
+                )}
                 <MenuItem
                   icon={RefreshCw}
                   onClick={async () => {
@@ -569,6 +584,8 @@ export default function DocPage() {
       </div>
 
       <EditDialog key={doc.updated_at} doc={doc} open={edit} onClose={() => setEdit(false)} />
+      <AddToDossier documentId={doc.id} open={dossier} onClose={() => setDossier(false)} />
+      <ShareDocDialog documentId={doc.id} title={docTitle(doc)} open={sharing} onClose={() => setSharing(false)} />
       <CategoryPicker
         open={moving}
         onClose={() => setMoving(false)}

@@ -15,7 +15,7 @@ export function createFakeDrive() {
   const newId = () => randomBytes(16).toString('base64url').replace(/[-_]/g, 'x').slice(0, 28)
   const now = () => new Date().toISOString()
   const space = (meta) => (meta.parents?.includes('appDataFolder') ? 'appDataFolder' : 'drive')
-  const pub = (f) => ({ kind: 'drive#file', ...f.meta, size: f.bytes ? String(f.bytes.length) : undefined })
+  const pub = (f) => ({ kind: 'drive#file', ...f.meta, size: f.bytes ? String(f.bytes.length) : undefined, webViewLink: `https://drive.google.com/file/d/${f.meta.id}/view?usp=drivesdk` })
   const change = (fileId, removed = false) => log.push({ fileId, removed })
 
   function put(meta, bytes) {
@@ -221,6 +221,23 @@ export function createFakeDrive() {
       const from = Number(url.searchParams.get('pageToken') ?? 0)
       const page = list.slice(from, from + size).map(pub)
       return send(res, 200, { files: page, nextPageToken: from + size < list.length ? String(from + size) : undefined })
+    }
+    // ---- sharing (a dossier shared by a link)
+    if ((mm = m(/^\/drive\/v3\/files\/([^/]+)\/permissions(?:\/([^/]+))?$/))) {
+      const f = files.get(decodeURIComponent(mm[1]))
+      if (!f) return error(res, 404, 'notFound', 'File not found')
+      f.perms = f.perms ?? []
+      if (req.method === 'POST' && !mm[2]) {
+        const p = { id: newId(), ...JSON.parse((await body(req)).toString('utf8') || '{}') }
+        f.perms.push(p)
+        return send(res, 200, { kind: 'drive#permission', id: p.id, type: p.type, role: p.role })
+      }
+      if (req.method === 'DELETE' && mm[2]) {
+        const i = f.perms.findIndex((p) => p.id === decodeURIComponent(mm[2]))
+        if (i < 0) return error(res, 404, 'notFound', 'Permission not found')
+        f.perms.splice(i, 1)
+        return send(res, 204)
+      }
     }
     if ((mm = m(/^\/drive\/v3\/files\/([^/]+)$/))) {
       const f = files.get(decodeURIComponent(mm[1]))

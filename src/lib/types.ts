@@ -57,6 +57,49 @@ export type DocLink = {
 export type Deadline = { id: string; document_id: string; kind: string; due_date: string; title: string; done: boolean }
 
 /** a row of the deadline radar */
+// ready dossiers («الملفات الجاهزة») and their share links (kh_dossier_*, kh_share_*)
+export type DossierSummary = { id: string; name: string; notes: string | null; created_at: string; procedure: string | null; documents: number; missing: number; shared: number; has: boolean | null }
+export type DossierItem = {
+  document_id: string
+  requirement: string | null
+  position: number
+  title: string
+  doc_type: string | null
+  page_count: number
+  state: string
+  sensitivity: string
+  doc_date: string | null
+  expiry_date: string | null
+}
+export type ReqStatus = 'found' | 'expired' | 'missing' | 'unsure'
+/** one paper the procedure asks for; `hidden`: answered by a document of the closed vault */
+export type Requirement = {
+  label: string
+  status: ReqStatus
+  document_id?: string | null
+  note?: string | null
+  title?: string | null
+  expiry_date?: string | null
+  gone?: boolean
+  hidden?: boolean
+}
+export type DossierPlan = { procedure: string; summary?: string | null; requirements: Requirement[]; planned_at?: string; cost_usd?: number; model?: string }
+export type ShareLink = {
+  id: string
+  url: string
+  label: string | null
+  watermark: string | null
+  expires_at: string
+  revoked: boolean
+  expired: boolean
+  created_at: string
+  drive_file: string | null
+  collection_id?: string | null
+  document_id?: string | null
+  name?: string | null
+}
+export type Dossier = { id: string; name: string; notes: string | null; created_at: string; items: DossierItem[]; hidden: number; plan: DossierPlan | null; shares: ShareLink[] }
+
 export type DeadlineItem = { id: string; due_date: string; title: string; kind: 'expiry' | 'action' | 'reminder'; done: boolean; document_id: string | null; doc_title: string | null; doc_type: string | null; vault: boolean }
 
 export type Proposal = {

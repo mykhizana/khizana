@@ -333,6 +333,80 @@ await A.engine.setMeta({ held_since: String(Date.now() - 11 * 60_000) })
 await A.engine.pull()
 ok('…then the gap is stepped over and it goes in', !(await A.engine.meta()).held && (await A.one(`select favorite from kh_documents where id = $1`, [c1])).favorite === true)
 
+// ------------------------------------------------------------ ready dossiers: one PDF, a share link, taken back, tidied
+{
+  const { publishShare, revokeShare, sweepShares, SHARE_FOLDER } = await import('../src/drive/share.ts')
+  const S = await phone('dS')
+  await S.call('kh_bootstrap')
+  const docId = await addDoc(S, { title: 'جواز السفر', text: 'passport' })
+  const dz = await S.call('kh_dossier_save', { name: 'ملف التجديد' })
+  await S.call('kh_dossier_set_items', { id: dz.id, items: [{ document_id: docId, requirement: 'جواز السفر' }] })
+  const db = { call: S.call }
+  const pdfA4 = jpegPdf([JPEG, JPEG], 'ملف التجديد', { a4: true, numbers: true })
+  {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const task = pdfjs.getDocument({ data: new Uint8Array(await pdfA4.arrayBuffer()) })
+    const doc = await task.promise
+    const page = await doc.getPage(2)
+    const [, , w, h] = page.view
+    const text = (await page.getTextContent()).items.map((x) => x.str).join('')
+    ok('dossier pdf: A4 pages, numbered «2 / 2», opens in pdf.js', doc.numPages === 2 && Math.round(w) === 595 && Math.round(h) === 842 && text.includes('2 / 2'), `${w}x${h} «${text}»`)
+    await task.destroy()
+  }
+
+  const p1 = await publishShare(client, db, { pdf: pdfA4, name: 'ملف التجديد', days: 7, collection_id: dz.id, label: 'للقنصلية' })
+  const copy = fake.files.get(p1.file)
+  const folder = copy && fake.files.get(copy.meta.parents[0])
+  ok('share: the PDF goes into the app folder of shared copies', folder?.meta.name === SHARE_FOLDER && copy.meta.name === 'ملف التجديد.pdf' && copy.meta.mimeType === 'application/pdf')
+  ok('share: anyone with the link can read it, nobody can find it', copy.perms?.length === 1 && copy.perms[0].type === 'anyone' && copy.perms[0].role === 'reader' && copy.perms[0].allowFileDiscovery === false)
+  ok('share: the copy carries its link and its end date', copy.meta.appProperties.kh === 'share' && copy.meta.appProperties.sid === p1.id && Math.abs(Date.parse(copy.meta.appProperties.exp) - Date.now() - 7 * 864e5) < 60_000)
+  ok('share: the link is noted in the archive', (await S.call('kh_shares_list', { open: true })).some((x) => x.id === p1.id && x.url === p1.url && x.label === 'للقنصلية' && x.collection_id === dz.id))
+  const p2 = await publishShare(client, db, { pdf: pdfA4, name: 'نسخة ثانية', days: 30, document_id: docId })
+  ok('share: one folder for every shared copy', [...fake.files.values()].filter((f) => f.meta.appProperties?.kh === 'shares' && !f.meta.trashed).length === 1 && fake.files.get(p2.file).meta.parents[0] === copy.meta.parents[0])
+
+  // the link could not be made: no stray shared copy is left behind
+  const before = [...fake.files.values()].filter((f) => f.meta.appProperties?.kh === 'share').length
+  const realShare = client.share
+  client.share = async () => {
+    throw new Error('permission refused')
+  }
+  let failed = null
+  try {
+    await publishShare(client, db, { pdf: pdfA4, name: 'x', days: 7, collection_id: dz.id })
+  } catch (e) {
+    failed = e
+  }
+  client.share = realShare
+  ok('share: a link that could not be made leaves no copy in Drive', !!failed && [...fake.files.values()].filter((f) => f.meta.appProperties?.kh === 'share').length === before)
+
+  // taken back from the app: the copy is deleted, the link no longer opens
+  await revokeShare(client, db, { id: p1.id, drive_file: p1.file })
+  ok('share: taken back → its copy is deleted from Drive and the link is marked', !fake.files.has(p1.file) && (await S.call('kh_shares_list', {})).find((x) => x.id === p1.id)?.revoked === true)
+
+  // the tidying, on any device
+  const p3 = await publishShare(client, db, { pdf: pdfA4, name: 'ثالث', days: 7, collection_id: dz.id })
+  await S.call('kh_share_revoke', { id: p3.id }) // taken back on a device that could not reach Drive
+  const sw1 = await sweepShares(client, db)
+  ok('sweep: a link taken back elsewhere loses its copy', !fake.files.has(p3.file) && sw1.removed === 1 && fake.files.has(p2.file))
+  const p4 = await publishShare(client, db, { pdf: pdfA4, name: 'رابع', days: 7, collection_id: dz.id })
+  const sw2 = await sweepShares(client, db, Date.now() + 8 * 864e5)
+  ok('sweep: a link past its date loses its copy and is closed (the 30-day one stays)', !fake.files.has(p4.file) && fake.files.has(p2.file) && sw2.closed >= 1 && (await S.call('kh_shares_list', {})).find((x) => x.id === p4.id)?.revoked === true)
+  const p5 = await publishShare(client, db, { pdf: pdfA4, name: 'خامس', days: 30, collection_id: dz.id })
+  fake.files.delete(p5.file) // deleted by hand in Drive
+  await sweepShares(client, db, Date.now() + 2 * 3600_000)
+  ok('sweep: a copy deleted by hand in Drive → its link is marked as taken back', (await S.call('kh_shares_list', {})).find((x) => x.id === p5.id)?.revoked === true)
+  // the dossier is deleted (its rows go): its copy is removed after a day of grace, never at once
+  const dz2 = await S.call('kh_dossier_save', { name: 'ملف سيُحذف' })
+  const p6 = await publishShare(client, db, { pdf: pdfA4, name: 'سادس', days: 30, collection_id: dz2.id })
+  await S.call('kh_dossier_delete', { id: dz2.id, force: true })
+  await sweepShares(client, db)
+  const kept = fake.files.has(p6.file)
+  await sweepShares(client, db, Date.now() + 2 * 864e5)
+  ok('sweep: a link whose dossier was deleted loses its copy, after a day (another device may not have it yet)', kept && !fake.files.has(p6.file) && fake.files.has(p2.file))
+  const st = await S.call('kh_shares_state', { ids: [p2.id, p1.id, p6.id] })
+  ok('sweep: the state of links, the closed vault included', st[p2.id] === 'live' && st[p1.id] === 'revoked' && st[p6.id] === 'gone', JSON.stringify(st))
+}
+
 // ------------------------------------------------------------ two devices creating an archive at the same moment
 const fake2 = await startFakeDrive(0)
 const client2 = driveClient(async () => 'tok', fake2.url)

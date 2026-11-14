@@ -357,6 +357,66 @@ ok('radar list: a closed vault hides its deadlines', !(await call('kh_deadlines_
   ok('radar: deleted', !(await call('kh_deadlines_list', { with_done: true })).some((x) => x.id === r1.id))
   await fails('radar: a deadline needs a title and a date', () => call('kh_deadline_add', { title: ' ', due_date: due }), /title and a date/)
 }
+// ready dossiers («الملفات الجاهزة») and their links
+{
+  claims = '{"aal":"aal2"}'
+  const dz = await call('kh_dossier_save', { name: 'تجديد بطاقة الإقامة' })
+  ok('dossier: created', !!dz.id && (await call('kh_dossiers_list')).some((x) => x.id === dz.id && x.documents === 0))
+  await fails('dossier: needs a name', () => call('kh_dossier_save', { name: '  ' }), /needs a name/)
+  const set = await call('kh_dossier_set_items', {
+    id: dz.id,
+    items: [{ document_id: pass1.id, requirement: 'جواز السفر' }, { document_id: d1.id, requirement: 'شهادة' }, { document_id: '00000000-0000-4000-8000-00000000dead' }],
+  })
+  ok('dossier: documents in order, unknown ones skipped', set.items === 2)
+  const g = await call('kh_dossier_get', { id: dz.id })
+  ok('dossier: read back in order with their requirements', g.items.length === 2 && g.items[0].document_id === pass1.id && g.items[0].requirement === 'جواز السفر' && g.items[1].document_id === d1.id && g.hidden === 0)
+  await call('kh_dossier_save', {
+    id: dz.id,
+    plan: { procedure: 'تجديد بطاقة الإقامة', requirements: [{ label: 'جواز السفر', status: 'found', document_id: pass1.id, note: 'صالح حتى 2030' }, { label: 'شهادة السكنى', status: 'missing', document_id: null, note: 'empadronamiento' }] },
+  })
+  const g2 = await call('kh_dossier_get', { id: dz.id })
+  ok('dossier: the checklist is kept, with the title of each found paper', g2.plan.procedure === 'تجديد بطاقة الإقامة' && g2.plan.requirements.length === 2 && !!g2.plan.requirements[0].title && g2.plan.requirements[1].status === 'missing')
+  ok('dossier list: counts its papers and what is missing', (await call('kh_dossiers_list')).find((x) => x.id === dz.id)?.missing === 1)
+  await call('kh_dossier_add', { id: dz.id, document_id: d3.id, requirement: 'إضافة' })
+  ok('dossier: one more document goes at the end', (await call('kh_dossier_get', { id: dz.id })).items.at(-1)?.document_id === d3.id)
+  await call('kh_dossier_add', { id: dz.id, document_id: d3.id, remove: true })
+  ok('dossier: … and out again', !(await call('kh_dossier_get', { id: dz.id })).items.some((x) => x.document_id === d3.id))
+  // the vault closes
+  claims = '{"aal":"aal1"}'
+  const g3 = await call('kh_dossier_get', { id: dz.id })
+  ok('dossier: a closed vault hides its document but counts it', g3.items.length === 1 && g3.items[0].document_id === d1.id && g3.hidden === 1)
+  const r0 = g3.plan.requirements[0]
+  ok('dossier: … and its line of the checklist shows only the label', r0.hidden === true && r0.label === 'جواز السفر' && !r0.note && !r0.title && !r0.document_id)
+  ok('dossier list: the vault document is still counted', (await call('kh_dossiers_list')).find((x) => x.id === dz.id)?.documents === 2)
+  await call('kh_dossier_set_items', { id: dz.id, items: [{ document_id: d1.id, requirement: 'شهادة' }] })
+  await fails('dossier: the checklist cannot be replaced while the vault hides part of it', () => call('kh_dossier_save', { id: dz.id, plan: { requirements: [] } }), /vault is closed/)
+  claims = '{"aal":"aal2"}'
+  ok('dossier: reordering with the vault closed kept the vault document', (await call('kh_dossier_get', { id: dz.id })).items.some((x) => x.document_id === pass1.id))
+  ok('dossier: membership shown for a document', (await call('kh_dossiers_list', { document_id: d1.id })).find((x) => x.id === dz.id)?.has === true)
+  // links
+  const week = new Date(Date.now() + 7 * 864e5).toISOString()
+  const sh = await call('kh_share_add', { collection_id: dz.id, drive_file: 'f1', permission_id: 'p1', url: 'https://drive.google.com/file/d/f1/view', label: 'للمحامي', expires_at: week })
+  ok('share: recorded with its link', (await call('kh_shares_list', { open: true })).some((x) => x.id === sh.id && x.url.includes('f1') && x.name === 'تجديد بطاقة الإقامة' && !x.expired))
+  const far = await call('kh_share_add', { collection_id: dz.id, drive_file: 'f2', url: 'u2', expires_at: '2099-01-01T00:00:00Z' })
+  ok('share: never longer than a year', new Date(far.expires_at).getTime() < Date.now() + 367 * 864e5)
+  await fails('share: needs the Drive file and the link', () => call('kh_share_add', { collection_id: dz.id, drive_file: '', url: '' }), /file and its link/)
+  await fails('dossier: not deleted while a link is live', () => call('kh_dossier_delete', { id: dz.id }), /live link/)
+  await call('kh_share_revoke', { id: sh.id })
+  await call('kh_share_revoke', { id: far.id })
+  ok('share: taken back', !(await call('kh_shares_list', { open: true })).some((x) => x.id === sh.id) && (await call('kh_dossier_get', { id: dz.id })).shares.find((x) => x.id === sh.id)?.revoked === true)
+  const one = await call('kh_share_add', { document_id: d1.id, drive_file: 'f3', url: 'u3' })
+  ok('share: one document alone too (30 days by default)', (await call('kh_shares_list', { document_id: d1.id })).some((x) => x.id === one.id && Math.abs(new Date(x.expires_at) - Date.now() - 30 * 864e5) < 864e5))
+  ok('share: written in the activity log', (await asUser(`select count(*)::int as n from public.kh_audit where action in ('share', 'unshare')`))[0].n >= 4)
+  current = B
+  ok('other account sees no dossier nor link', (await call('kh_dossiers_list')).length === 0 && (await call('kh_shares_list')).length === 0 && (await call('kh_dossier_get', { id: dz.id })) === null)
+  await fails('other account cannot fill a dossier of another', () => call('kh_dossier_set_items', { id: dz.id, items: [] }), /not found/)
+  await fails('other account cannot share a dossier of another', () => call('kh_share_add', { collection_id: dz.id, drive_file: 'x', url: 'y' }), /not found/)
+  current = A
+  await call('kh_share_revoke', { id: one.id })
+  await call('kh_dossier_delete', { id: dz.id })
+  ok('dossier: deleted, with its links', !(await call('kh_dossiers_list')).some((x) => x.id === dz.id) && !(await call('kh_shares_list')).some((x) => x.collection_id === dz.id))
+  claims = '{"aal":"aal1"}'
+}
 ok('vault metadata hidden: corrections / links', (await asUser(`select 1 from public.kh_corrections where document_id = $1 union all select 1 from public.kh_links where from_id = $1 or to_id = $1`, [pass1.id])).length === 0)
 ok('vault metadata hidden: its pages and fingerprints', (await asUser(`select 1 from public.kh_pages where document_id = $1 union all select 1 from public.kh_lsh where document_id = $1`, [pass1.id])).length === 0)
 

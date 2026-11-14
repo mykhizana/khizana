@@ -25,47 +25,78 @@ export function jpegInfo(b: Uint8Array): { width: number; height: number; channe
   return null
 }
 
-export function jpegPdf(pages: Uint8Array[], title = ''): Blob {
+/** A4 in PDF points */
+const A4 = { w: 595.28, h: 841.89 }
+
+/**
+ * JPEG pages → one PDF. By default each page keeps the paper's real size (a scan is about 200 dpi).
+ * `a4`: every page is an A4 sheet (turned when the picture is wider than tall) with the picture fitted
+ * in it, for a dossier that prints evenly. `numbers`: «3 / 12» at the foot of each page.
+ */
+export function jpegPdf(pages: Uint8Array[], title = '', opts: { a4?: boolean; numbers?: boolean } = {}): Blob {
   const enc = new TextEncoder()
   const parts: (Uint8Array | string)[] = []
   const offsets: number[] = []
   let size = 0
+  const NL = '\n'
   const add = (x: Uint8Array | string) => {
     parts.push(x)
     size += typeof x === 'string' ? enc.encode(x).length : x.length
   }
   const obj = (n: number, body: string) => {
     offsets[n] = size
-    add(`${n} 0 obj\n${body}\nendobj\n`)
+    add(`${n} 0 obj${NL}${body}${NL}endobj${NL}`)
   }
-  add('%PDF-1.4\n')
+  add(`%PDF-1.4${NL}`)
   add(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a])) // the «binary file» marker
   const usable = pages.map((b) => ({ b, info: jpegInfo(b) })).filter((p) => p.info)
-  // 1 catalog, 2 pages, 3 info, then 3 objects per page (page, content, image)
+  // 1 catalog, 2 pages, 3 info, then 3 objects per page (page, content, image), then the font
   const kids = usable.map((_, i) => `${4 + i * 3} 0 R`).join(' ')
+  const font = 4 + usable.length * 3
   obj(1, '<< /Type /Catalog /Pages 2 0 R >>')
   obj(2, `<< /Type /Pages /Kids [${kids}] /Count ${usable.length} >>`)
   obj(3, `<< /Producer (Khizana) /Title <FEFF${utf16hex(title)}> >>`)
+  const r2 = (x: number) => Math.round(x * 100) / 100
   usable.forEach(({ b, info }, i) => {
     const n = 4 + i * 3
-    // a scan is about 200 dpi: the page keeps the paper's real size
-    const w = Math.max(1, Math.round((info!.width * 72) / 200))
-    const h = Math.max(1, Math.round((info!.height * 72) / 200))
+    let w: number
+    let h: number
+    let draw: string
+    if (opts.a4) {
+      const wide = info!.width > info!.height
+      w = wide ? A4.h : A4.w
+      h = wide ? A4.w : A4.h
+      // room for the page number; the picture keeps its proportions, centred
+      const m = opts.numbers ? 22 : 0
+      const s = Math.min(w / info!.width, (h - m * 2) / info!.height)
+      const iw = info!.width * s
+      const ih = info!.height * s
+      draw = `q ${r2(iw)} 0 0 ${r2(ih)} ${r2((w - iw) / 2)} ${r2((h - ih) / 2)} cm /Im0 Do Q`
+    } else {
+      // a scan is about 200 dpi: the page keeps the paper's real size
+      w = Math.max(1, Math.round((info!.width * 72) / 200))
+      h = Math.max(1, Math.round((info!.height * 72) / 200))
+      draw = `q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`
+    }
+    const label = `${i + 1} / ${usable.length}`
+    const content = opts.numbers ? `${draw}${NL}BT /F1 8 Tf 0.45 g ${r2(w / 2 - label.length * 2.2)} 9 Td (${label}) Tj ET` : draw
     const space = info!.channels === 1 ? '/DeviceGray' : info!.channels === 4 ? '/DeviceCMYK' : '/DeviceRGB'
-    const content = `q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`
-    obj(n, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /XObject << /Im0 ${n + 2} 0 R >> >> /Contents ${n + 1} 0 R >>`)
-    obj(n + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`)
+    const fonts = opts.numbers ? ` /Font << /F1 ${font} 0 R >>` : ''
+    obj(n, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${r2(w)} ${r2(h)}] /Resources << /XObject << /Im0 ${n + 2} 0 R >>${fonts} >> /Contents ${n + 1} 0 R >>`)
+    obj(n + 1, `<< /Length ${content.length} >>${NL}stream${NL}${content}${NL}endstream`)
     offsets[n + 2] = size
-    add(`${n + 2} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${info!.width} /Height ${info!.height} /ColorSpace ${space} /BitsPerComponent 8 /Filter /DCTDecode${info!.channels === 4 ? ' /Decode [1 0 1 0 1 0 1 0]' : ''} /Length ${b.length} >>\nstream\n`)
+    const decode = info!.channels === 4 ? ' /Decode [1 0 1 0 1 0 1 0]' : ''
+    add(`${n + 2} 0 obj${NL}<< /Type /XObject /Subtype /Image /Width ${info!.width} /Height ${info!.height} /ColorSpace ${space} /BitsPerComponent 8 /Filter /DCTDecode${decode} /Length ${b.length} >>${NL}stream${NL}`)
     add(b)
-    add('\nendstream\nendobj\n')
+    add(`${NL}endstream${NL}endobj${NL}`)
   })
-  const count = 4 + usable.length * 3
+  if (opts.numbers) obj(font, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>')
+  const count = font + (opts.numbers ? 1 : 0)
   const xref = size
-  let table = `xref\n0 ${count}\n0000000000 65535 f \n`
-  for (let n = 1; n < count; n++) table += `${String(offsets[n] ?? 0).padStart(10, '0')} 00000 n \n`
+  let table = `xref${NL}0 ${count}${NL}0000000000 65535 f ${NL}`
+  for (let n = 1; n < count; n++) table += `${String(offsets[n] ?? 0).padStart(10, '0')} 00000 n ${NL}`
   add(table)
-  add(`trailer\n<< /Size ${count} /Root 1 0 R /Info 3 0 R >>\nstartxref\n${xref}\n%%EOF\n`)
+  add(`trailer${NL}<< /Size ${count} /Root 1 0 R /Info 3 0 R >>${NL}startxref${NL}${xref}${NL}%%EOF${NL}`)
   return new Blob(parts.map((p) => (typeof p === 'string' ? enc.encode(p) : p)) as BlobPart[], { type: 'application/pdf' })
 }
 

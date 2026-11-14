@@ -46,6 +46,7 @@ export const fmtNum = (n: number | null | undefined) => (n ?? 0).toLocaleString(
 
 /** Arabic counting: وثيقة واحدة · وثيقتان · 3 وثائق · 11 وثيقة */
 export const docsAr = (n: number) => (n === 1 ? 'وثيقة واحدة' : n === 2 ? 'وثيقتان' : n >= 3 && n <= 10 ? `${n} وثائق` : `${n} وثيقة`)
+export const daysAr = (n: number) => (n === 1 ? 'يوم واحد' : n === 2 ? 'يومان' : n >= 3 && n <= 10 ? `${n} أيام` : `${n} يوماً`)
 export const pagesAr = (n: number) => (n === 1 ? 'صفحة واحدة' : n === 2 ? 'صفحتان' : n >= 3 && n <= 10 ? `${n} صفحات` : `${n} صفحة`)
 
 export function docTitle(d: { title_ar?: string | null; title?: string | null; file_name?: string | null }): string {

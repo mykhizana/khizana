@@ -20,6 +20,8 @@ const Home = lazy(() => import('@/pages/home'))
 const SearchPage = lazy(() => import('@/pages/search'))
 const AskPage = lazy(() => import('@/pages/ask'))
 const DeadlinesPage = lazy(() => import('@/pages/deadlines'))
+const DossiersPage = lazy(() => import('@/pages/dossiers'))
+const DossierPage = lazy(() => import('@/pages/dossier'))
 const LibraryPage = lazy(() => import('@/pages/library'))
 const DocPage = lazy(() => import('@/pages/doc'))
 const AddPage = lazy(() => import('@/pages/add'))
@@ -64,6 +66,8 @@ const router = createBrowserRouter(
         { path: 'search', element: page(<SearchPage />) },
         { path: 'ask', element: page(<AskPage />) },
         { path: 'deadlines', element: page(<DeadlinesPage />) },
+        { path: 'dossiers', element: page(<DossiersPage />) },
+        { path: 'dossiers/:id', element: page(<DossierPage />) },
         { path: 'library', element: page(<LibraryPage />) },
         { path: 'doc/:id', element: page(<DocPage />) },
         { path: 'add', element: page(<AddPage />) },
@@ -121,6 +125,7 @@ export function App() {
         void ensurePersistence()
         void driveSync.start()
         void import('@/drive/reminders').then(({ reminders }) => reminders.start())
+        void import('@/lib/shares').then(({ shares }) => shares.start())
         if (back && back !== '/') void router.navigate(back)
       }
     } catch (e) {
