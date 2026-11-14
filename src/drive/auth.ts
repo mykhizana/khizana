@@ -60,6 +60,8 @@ async function store(t: Tok | null) {
 
 const basename = BASE.replace(/\/$/, '')
 const standaloneIos = () => /iPad|iPhone|iPod/.test(navigator.userAgent) && (navigator as Navigator & { standalone?: boolean }).standalone === true
+// one Google window at a time (the banner and the renewal on a tap may ask together)
+let connecting: Promise<void> | null = null
 
 export const auth = {
   fake: DRIVE_FAKE,
@@ -106,8 +108,16 @@ export const auth = {
     if (!DRIVE_FAKE) void loadGis().catch(() => undefined)
   },
 
+  /** the permission can be renewed by a Google window on this page (not on an iPhone home-screen app) */
+  canRenewInPlace: () => !DRIVE_FAKE && !standaloneIos(),
+
   /** from a click: Google's window asks the owner (the first time) or only confirms */
-  async connect(opts: { consent?: boolean } = {}): Promise<void> {
+  connect(opts: { consent?: boolean } = {}): Promise<void> {
+    if (!connecting) connecting = auth.connectOnce(opts).finally(() => (connecting = null))
+    return connecting
+  },
+
+  async connectOnce(opts: { consent?: boolean } = {}): Promise<void> {
     if (DRIVE_FAKE) return store({ access_token: 'fake-token', expires_at: Date.now() + 3600_000 })
     const client_id = await auth.clientId()
     if (!client_id) throw new Error('أضف معرّف Google (Client ID) أولاً')

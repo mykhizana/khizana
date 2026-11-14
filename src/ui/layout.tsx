@@ -28,7 +28,7 @@ import { MODE } from '@/lib/config'
 import { useAiMode, useCounts, useQueue } from '@/lib/queries'
 import { queue } from '@/pipeline/queue'
 import { Logo } from './bits'
-import { DriveBanner, DriveChip } from './drive'
+import { DriveAutoRenew, DriveBanner, DriveChip } from './drive'
 import { StorageBanner } from './storage'
 import { Badge, Button, Dialog, IconButton, Progress, cn } from './kit'
 
@@ -62,7 +62,7 @@ function QueueCard() {
   const q = useQueue()
   // without a Claude key the approximate classifier works: no model to show
   const claude = useAiMode().data === 'claude'
-  if (!q.running.length && !q.pending && !q.paused && !q.failed.length) return null
+  if (!q.running.length && !q.pending && !q.paused && !q.failed.length && !q.foreign.length) return null
   return (
     <div className="rounded-2xl border border-line bg-surface-2 p-3 text-xs">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -78,6 +78,14 @@ function QueueCard() {
       </div>
       {q.message && <p className="mb-2 leading-relaxed text-warning">{q.message}</p>}
       {claude && q.economy && !q.paused && <p className="mb-2 leading-relaxed text-muted">يقرؤها Sonnet 5.5 بنصف الثمن</p>}
+      {q.foreign.length > 0 && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-surface px-2 py-1.5 text-muted">
+          <span className="min-w-0">{q.foreign.length === 1 ? 'وثيقة أضافها جهازك الآخر: يقرؤها هو' : `${q.foreign.length} وثائق أضافها جهازك الآخر: يقرؤها هو`}</span>
+          <button type="button" className="shrink-0 font-semibold text-brand-700 hover:underline dark:text-brand-200" onClick={() => void queue.readHere(q.foreign)}>
+            اقرأها هنا
+          </button>
+        </div>
+      )}
       {q.failed.length > 0 && (
         <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-danger-bg px-2 py-1.5 text-danger">
           <Link to={`/doc/${q.failed[0]}`} className="min-w-0 truncate hover:underline">
@@ -225,6 +233,7 @@ export function Shell() {
         <div className="mx-auto max-w-6xl px-4 pt-5 sm:px-6 sm:pt-7">
           {MODE === 'local' && <StorageBanner />}
           {MODE === 'local' && <DriveBanner />}
+          {MODE === 'local' && <DriveAutoRenew />}
           <Outlet />
         </div>
       </main>

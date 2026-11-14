@@ -341,12 +341,15 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '
   const d4 = uuid()
   await A.call('kh_doc_create', newDoc(d4, 'في الطابور', 'بانتظار المعالجة'))
   await push(A, B)
-  ok('a fresh document of A is left to A', !(await B.call('kh_pending')).some((x) => x.id === d4) && (await A.call('kh_pending')).some((x) => x.id === d4))
+  const onB = async () => (await B.call('kh_pending')).find((x) => x.id === d4)
+  ok("A's document is A's to read: B lists it as foreign, A as its own", (await onB())?.foreign === true && (await A.call('kh_pending')).find((x) => x.id === d4)?.foreign === false)
   await B.db.transaction(async (tx) => {
     await tx.query(`select set_config('kh.applying', 'on', true)`)
-    await tx.query(`update kh_documents set kh_v = kh_v - 3600000000 where id = $1`, [d4])
+    await tx.query(`update kh_documents set kh_v = kh_v - 36000000000 where id = $1`, [d4])
   })
-  ok('…unless A left it untouched for a while', (await B.call('kh_pending')).some((x) => x.id === d4))
+  ok('…even when A left it untouched for hours (sync may lag): B never takes it by itself', (await onB())?.foreign === true)
+  await B.call('kh_doc_state', { id: d4, state: 'new', detail: 'هنا · 1' })
+  ok('…until the owner asks B to read it there («اقرأها هنا»): then B owns it', (await onB())?.foreign === false && (await A.one(`select kh_dev from kh_documents where id = $1`, [d4])).kh_dev !== (await B.one(`select kh_dev from kh_documents where id = $1`, [d4])).kh_dev)
   await broadcast(A, [B, C])
   await broadcast(B, [A, C])
 

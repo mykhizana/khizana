@@ -23,6 +23,8 @@ export type QueueSnapshot = {
   economy: boolean
   /** documents that failed three times (their reason is on their page) */
   failed: string[]
+  /** waiting documents another device added: that device reads them (unless the owner says «here») */
+  foreign: string[]
 }
 
 const CONCURRENCY = 2
@@ -31,7 +33,7 @@ const WORKER = `w-${crypto.randomUUID().slice(0, 8)}`
 class Queue {
   private running = new Map<string, Job>()
   private listeners = new Set<() => void>()
-  private snap: QueueSnapshot = { running: [], pending: 0, paused: null, message: null, lastDone: 0, leader: false, economy: false, failed: [] }
+  private snap: QueueSnapshot = { running: [], pending: 0, paused: null, message: null, lastDone: 0, leader: false, economy: false, failed: [], foreign: [] }
   private kicking = false
   private again = false
   private failures = new Map<string, number>()
@@ -100,7 +102,9 @@ class Queue {
     } catch {
       return
     }
-    const waiting = pending.filter((p) => p.state !== 'error').length
+    // another device's documents are read there (sync may lag for hours): never taken over silently
+    const mine = pending.filter((p) => !p.foreign)
+    const waiting = mine.filter((p) => p.state !== 'error').length
     if (Date.now() - this.modeAt > 15_000) {
       try {
         this.mode = readingMode((await api.settings())?.reading_mode)
@@ -110,10 +114,15 @@ class Queue {
       }
     }
     this.wave = economyWave({ mode: this.mode, wave: this.wave, busy: waiting + this.running.size })
-    this.emit({ pending: waiting, economy: this.mode === 'sonnet' || this.wave, failed: pending.filter((p) => p.state === 'error').map((p) => p.id) })
+    this.emit({
+      pending: waiting,
+      economy: this.mode === 'sonnet' || this.wave,
+      failed: pending.filter((p) => p.state === 'error').map((p) => p.id),
+      foreign: pending.filter((p) => p.foreign && p.state !== 'error').map((p) => p.id),
+    })
     if (this.snap.paused || !this.leader) return
     const now = Date.now()
-    for (const p of pending) {
+    for (const p of mine) {
       if (this.running.size >= CONCURRENCY || this.snap.paused) break
       if (this.running.has(p.id) || p.state === 'error') continue
       if ((this.failures.get(p.id) ?? 0) >= 3) continue
@@ -184,6 +193,17 @@ class Queue {
       await api.setState(id, 'new', null)
     }
     this.modeAt = 0
+    this.resume()
+  }
+
+  /** «اقرأها هنا»: documents another device added are read by this one (a local change makes them its own) */
+  async readHere(ids: string[]) {
+    const mark = `هنا · ${Date.now()}`
+    for (const id of ids) {
+      this.failures.delete(id)
+      this.cooldown.delete(id)
+      await api.setState(id, 'new', mark)
+    }
     this.resume()
   }
 

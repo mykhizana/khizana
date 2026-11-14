@@ -1266,15 +1266,17 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
--- documents still to be read / understood. With several devices, one that another device has just
--- added (or is working on) is left to it: only this device's own, or ones left untouched for a while
+-- documents still to be read / understood. A document belongs to the device that last worked on it
+-- (the one that added it has its files): another device never processes it by itself — sync can lag
+-- for hours (Google's permission lasts an hour), and taking over «quiet» documents made two devices pay
+-- twice for the same reading. Other devices' documents are listed with foreign = true; the owner can
+-- take one over («اقرأها هنا»: any local change to it makes it this device's).
 create or replace function public.kh_pending(p jsonb default '{}') returns jsonb
 language sql set search_path = public, extensions as $$
   select coalesce(jsonb_agg(jsonb_build_object('id', id, 'state', state, 'detail', state_detail, 'title', coalesce(title_ar, title, file_name),
-      'needs_ocr', needs_ocr, 'page_count', page_count) order by created_at), '[]'::jsonb)
+      'needs_ocr', needs_ocr, 'page_count', page_count,
+      'foreign', not (kh_dev is null or kh_dev = public.kh_sync_dev())) order by created_at), '[]'::jsonb)
   from public.kh_documents
   where owner_id = auth.uid() and deleted_at is null and state not in ('ready', 'review')
     and (claimed_at is null or claimed_at < now() - interval '10 minutes')
-    and (kh_dev is null or kh_dev = public.kh_sync_dev()
-         or kh_v < (extract(epoch from now() - interval '10 minutes') * 1000000)::bigint)
 $$;

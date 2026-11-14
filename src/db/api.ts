@@ -72,7 +72,8 @@ export const api = {
   setText: (p: { id: string; pages: { page_no: number; text: string; text_source: string; text_hash: string | null; legibility?: string; blank?: boolean }[]; text_hash: string | null; text_chars: number; minhash: number[] | null; lsh: string[] | null; needs_ocr?: boolean }) =>
     call('kh_doc_set_text', p),
   setState: (id: string, state: string, detail?: string | null) => call('kh_doc_state', { id, state, detail }),
-  pending: () => call<{ id: string; state: string; detail: string | null; title: string; needs_ocr: boolean; page_count: number }[]>('kh_pending'),
+  /** `foreign`: another device's document (device mode) — it reads it itself; see kh_pending */
+  pending: () => call<{ id: string; state: string; detail: string | null; title: string; needs_ocr: boolean; page_count: number; foreign?: boolean }[]>('kh_pending'),
   updateDoc: (id: string, fields: Record<string, unknown>, by_owner = true) => call<{ ok: boolean; sealed?: boolean }>('kh_doc_update', { id, fields, by_owner }),
   deleteDocs: (ids: string[]) => call('kh_doc_delete', { ids }),
   restoreDoc: (id: string) => call('kh_doc_restore', { id }),

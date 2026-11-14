@@ -57,6 +57,7 @@ export function DriveChip({ className }: { className?: string }) {
     <button
       type="button"
       onClick={d.state === 'auth' ? reconnect : undefined}
+      data-drive-renew
       title={d.busy ?? d.message ?? `آخر مزامنة: ${ago(d.lastSync)}`}
       className={cn('inline-flex items-center gap-1.5', d.state === 'auth' || d.state === 'full' || d.state === 'error' ? 'text-warning' : '', className)}
     >
@@ -89,12 +90,45 @@ export function DriveBanner() {
         )}
       </div>
       {d.state === 'auth' && (
-        <Button variant="brass" icon={LogIn} onClick={reconnect}>
+        <Button variant="brass" icon={LogIn} onClick={reconnect} data-drive-renew>
           متابعة
         </Button>
       )}
     </Card>
   )
+}
+
+/**
+ * Google's permission lasts an hour and only a tap may open Google's window to renew it. So the first
+ * tap anywhere in the app, once the permission is about to end (or has ended), renews it — a Google
+ * window may flash and close — and the waiting changes go out at once. Without this, a device that
+ * stayed open stopped syncing until the owner noticed «متابعة», and the other device saw an old archive.
+ */
+export function DriveAutoRenew() {
+  const d = useDrive()
+  useEffect(() => {
+    if (!d.linked || !auth.canRenewInPlace()) return
+    let last = 0
+    const onTap = (ev: MouseEvent) => {
+      if (Date.now() - last < 90_000) return
+      // the banner's and the chip's own buttons renew by themselves
+      if ((ev.target as HTMLElement | null)?.closest?.('[data-drive-renew]')) return
+      void (async () => {
+        const end = await auth.expiresAt()
+        if (end && end - Date.now() > 10 * 60_000) return
+        last = Date.now()
+        try {
+          await auth.connect()
+          void driveSync.syncNow()
+        } catch {
+          /* the banner stays: one tap on «متابعة» */
+        }
+      })()
+    }
+    document.addEventListener('click', onTap, true)
+    return () => document.removeEventListener('click', onTap, true)
+  }, [d.linked])
+  return null
 }
 
 type Plan = Awaited<ReturnType<typeof driveSync.inspect>>
