@@ -7,7 +7,19 @@ import type { Seg } from './bib'
 export type DocxPara = { segs: Seg[]; style?: 'Title' | 'Heading1' | 'Heading2'; rtl: boolean }
 
 const ARABIC = /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+// characters XML forbids (a stray form feed copied from a PDF) would make Word refuse the file
+const allowed = (c: string) => {
+  const n = c.codePointAt(0) ?? 0
+  return n >= 32 ? n !== 0xfffe && n !== 0xffff : n === 9 || n === 10 || n === 13
+}
+const esc = (s: string) =>
+  Array.from(s)
+    .filter(allowed)
+    .join('')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 

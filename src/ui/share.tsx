@@ -129,6 +129,7 @@ export function SharePanel({
   target,
   cover = true,
   blocked,
+  pages,
   onShared,
 }: {
   entries: PdfEntry[]
@@ -139,6 +140,8 @@ export function SharePanel({
   cover?: boolean
   /** why it cannot be made now (the vault is closed…) */
   blocked?: string | null
+  /** the number of pages (a very big file is confirmed first) */
+  pages?: number
   onShared?: () => Promise<unknown> | void
 }) {
   const [withCover, setWithCover] = useState(cover)
@@ -163,6 +166,7 @@ export function SharePanel({
   const run = async (kind: 'pdf' | 'phone' | 'link') => {
     if (marked && !to.trim()) return toast.error('اكتب لمن تُقدَّم هذه النسخة (يظهر في العلامة المائية)')
     if (!entries.length) return toast.error('لا وثيقة في الملف بعد')
+    if (pages && pages > 150 && !confirm(`سيكون الملف ${pagesAr(pages)}: يأخذ تجهيزه بعض الوقت ويكبر حجمه. أتتابع؟`)) return
     // Google's window must open from the click itself, before the long work
     if (kind === 'link' && !(await shares.ready())) {
       try {
@@ -398,7 +402,7 @@ export function AddToDossier({ documentId, open, onClose }: { documentId: string
   )
 }
 
-export function ShareDocDialog({ documentId, title, open, onClose }: { documentId: string; title: string; open: boolean; onClose: () => void }) {
+export function ShareDocDialog({ documentId, title, pages, open, onClose }: { documentId: string; title: string; pages?: number; open: boolean; onClose: () => void }) {
   const links = useQuery({ queryKey: ['shares', 'doc', documentId], queryFn: () => api.shares({ document_id: documentId }), enabled: open })
   return (
     <Dialog open={open} onClose={onClose} title="شارك هذه الوثيقة">
@@ -407,7 +411,7 @@ export function ShareDocDialog({ documentId, title, open, onClose }: { documentI
           <Stamp className="mt-0.5 size-4 shrink-0 text-brand-600" />
           نسخة PDF من صفحاتها، بعلامة مائية إن شئت، تُحمَّل أو تُرسل من الهاتف أو بِرابط يُسحب متى شئت.
         </p>
-        <SharePanel entries={[{ id: documentId }]} title={title} target={{ document_id: documentId }} cover={false} onShared={() => links.refetch()} />
+        <SharePanel entries={[{ id: documentId }]} title={title} target={{ document_id: documentId }} cover={false} pages={pages} onShared={() => links.refetch()} />
         {!!links.data?.length && (
           <div>
             <h3 className="mb-2 text-sm font-semibold text-ink">روابط هذه الوثيقة</h3>

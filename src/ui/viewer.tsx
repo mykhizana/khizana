@@ -88,6 +88,10 @@ export function Viewer({ doc, page, hl }: { doc: Doc; page: number | null; hl: s
   const [zoom, setZoom] = useState(1)
   const [find, setFind] = useState(hl)
   const tokens = useMemo(() => queryTokens(find), [find])
+  // a new place to show (a citation, an article of the index): its words are looked for again
+  useEffect(() => {
+    if (hl) setFind(hl)
+  }, [hl])
 
   useEffect(() => {
     if (!page) return

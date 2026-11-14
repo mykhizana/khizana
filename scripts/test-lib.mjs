@@ -457,6 +457,8 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   const { unzipSync, strFromU8 } = await import('fflate')
   const z = unzipSync(docx([{ segs: [{ t: 'لائحة المراجع' }], style: 'Title', rtl: true }, { segs: fullRef(book), rtl: true }, { segs: fullRef(floridi), rtl: false }]))
   const xml = strFromU8(z['word/document.xml'])
+  const zbad = unzipSync(docx([{ segs: [{ t: 'Titre' + String.fromCharCode(12) + 'suite & <fin>' }], rtl: false }]))
+  ok('word: characters XML forbids are dropped, the rest escaped', strFromU8(zbad['word/document.xml']).includes('Titresuite &amp; &lt;fin&gt;'))
   ok('word: a real .docx (content types, document, styles)', !!z['[Content_Types].xml'] && !!z['word/styles.xml'] && !!z['_rels/.rels'] && xml.startsWith('<?xml'))
   ok('word: Arabic paragraphs right-to-left, titles in italics (Arabic italics too)', (xml.match(/<w:bidi\/>/g) ?? []).length >= 3 && /<w:rPr><w:rtl\/><w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">القانون الإداري/.test(xml) && /<w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">Philosophy &amp; Technology/.test(xml))
 }
@@ -488,6 +490,24 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   const dq = (u, v) => Math.hypot(q.get(u).x - q.get(v).x, q.get(u).y - q.get(v).y)
   const tight = Math.min(...['a', 'b'].flatMap((g) => [1, 2, 3].flatMap((i) => [2, 3, 4].filter((j) => j > i).map((j) => dq(`${g}${i}`, `${g}${j}`)))))
   ok('graph layout: separate groups each keep room of their own', q.size === 9 && [...q.values()].every((v) => v.x >= 0 && v.x <= 1000 && v.y >= 0 && v.y <= 1000) && tight > 80, tight.toFixed(0))
+}
+
+// ------------------------------------------------------------ the index of a legal text (الفصل / المادة / Article)
+{
+  const { legalArticles, articleName } = await import('../src/lib/legal.ts')
+  const pages = [
+    { page_no: 1, text: 'ظهير شريف رقم 1.11.91 صادر في 27 شعبان 1432\nالباب الأول\nأحكام عامة\nالفصل الأول\nنظام الحكم بالمغرب نظام ملكية دستورية، ديمقراطية برلمانية واجتماعية.\nالفصل 2\nالسيادة للأمة، تمارسها مباشرة بالاستفتاء.' },
+    { page_no: 2, text: 'طبقا للفصل 99 أعلاه، يمارس…\nالفصل ٢٧ - للمواطنات والمواطنين حق الحصول على المعلومات.\nالفصل 27 (تكرار في الهامش)\nالمادة الثانية من هذا القانون\nالفصل 133 مكرر: نص' },
+    { page_no: 3, text: 'Article premier\nLe Royaume du Maroc est une monarchie constitutionnelle.\nArticle 27 : Les citoyennes et les citoyens ont le droit d’accéder à l’information.\nArtículo 5. Texto\nArticle suivant le texte' },
+  ]
+  const a = legalArticles(pages)
+  const names = a.map(articleName)
+  ok('legal index: articles found in order, Arabic ordinals and Arabic-Indic digits read', names.slice(0, 3).join('|') === 'الفصل 1|الفصل 2|الفصل 27', names.join('|'))
+  ok('legal index: a reference inside a sentence is not an article', !names.includes('الفصل 99'))
+  ok('legal index: each article once, where it first appears', names.filter((x) => x === 'الفصل 27').length === 1 && a.find((x) => articleName(x) === 'الفصل 27').page_no === 2)
+  ok('legal index: «مكرر», المادة, French and Spanish articles', names.includes('الفصل 133 مكرر') && names.includes('المادة 2') && names.includes('Article 1') && names.includes('Article 27') && names.includes('Artículo 5'))
+  ok('legal index: «Article suivant» is not an article', !names.some((x) => /suivant/.test(x)) && a.length === 8, String(a.length))
+  ok('legal index: the start of each article text (from the next line when the heading stands alone)', a[0].excerpt.startsWith('نظام الحكم بالمغرب') && a.find((x) => articleName(x) === 'الفصل 27').excerpt.startsWith('للمواطنات'))
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

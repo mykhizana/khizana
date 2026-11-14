@@ -44,7 +44,7 @@ import { CatPath, StateBadge, stateReason } from '@/ui/bits'
 import { downloadDoc } from '@/ui/download'
 import { Badge, Button, Card, Dialog, Field, IconButton, Input, Menu, MenuItem, Select, Skeleton, Textarea, cn } from '@/ui/kit'
 import { CategoryPicker, LocationPicker } from '@/ui/pickers'
-import { ReferenceCard } from '@/ui/reference'
+import { LegalIndex, ReferenceCard } from '@/ui/reference'
 import { AddToDossier, ShareDocDialog } from '@/ui/share'
 import { Viewer } from '@/ui/viewer'
 
@@ -393,6 +393,7 @@ export default function DocPage() {
           )}
 
           <ReferenceCard doc={doc} />
+          <LegalIndex doc={doc} />
 
           <Card className="p-5">
             <div className="mb-1 flex items-center justify-between">
@@ -588,7 +589,7 @@ export default function DocPage() {
 
       <EditDialog key={doc.updated_at} doc={doc} open={edit} onClose={() => setEdit(false)} />
       <AddToDossier documentId={doc.id} open={dossier} onClose={() => setDossier(false)} />
-      <ShareDocDialog documentId={doc.id} title={docTitle(doc)} open={sharing} onClose={() => setSharing(false)} />
+      <ShareDocDialog documentId={doc.id} title={docTitle(doc)} pages={doc.page_count} open={sharing} onClose={() => setSharing(false)} />
       <CategoryPicker
         open={moving}
         onClose={() => setMoving(false)}

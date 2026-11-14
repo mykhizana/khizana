@@ -523,6 +523,7 @@ export default function DossierPage() {
           subtitle={d.notes}
           target={{ collection_id: d.id }}
           blocked={blocked}
+          pages={d.items.reduce((n, i) => n + (i.page_count || 1), 0)}
           onShared={refresh}
         />
         {d.shares.length > 0 && (

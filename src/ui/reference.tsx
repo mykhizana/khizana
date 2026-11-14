@@ -1,13 +1,15 @@
 // «المرجع بأسلوبك» on a research document, and the record editor: the reference in the owner's citation
 // rules (src/lib/bib.ts), copied with its italics (Word keeps them), in its four forms.
 import { useQueryClient } from '@tanstack/react-query'
-import { BookMarked, Check, ClipboardCopy, Pencil, Plus, Sparkles, Trash2, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { BookMarked, Check, ClipboardCopy, ListOrdered, Pencil, Plus, Sparkles, Trash2, TriangleAlert } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { extractBib } from '@/ai/bib'
 import { api } from '@/db/api'
 import { BIB_KINDS, RESEARCH_TYPES, citedBy, cleanBib, firstCite, fullRef, html, ibid, kindOfType, missing, plain, shortRef, type Bib, type BibKind, type Seg } from '@/lib/bib'
 import { fmtUsd } from '@/lib/cost'
+import { articleName, legalArticles } from '@/lib/legal'
 import { useAiMode } from '@/lib/queries'
 import type { Doc } from '@/lib/types'
 import { Badge, Button, Card, Dialog, Field, IconButton, Input, Select, cn } from './kit'
@@ -285,6 +287,51 @@ export function ReferenceCard({ doc }: { doc: Doc }) {
         </div>
       )}
       <BibEditor key={`${doc.updated_at}-${edit}`} open={edit} onClose={() => setEdit(false)} initial={bib ?? guessBib(doc)} onSave={(b) => save(b)} />
+    </Card>
+  )
+}
+
+/** a legal text: its articles (الفصل / المادة / Article), to jump to one and copy its citation */
+export function LegalIndex({ doc }: { doc: Doc }) {
+  const [, setParams] = useSearchParams()
+  const [q, setQ] = useState('')
+  const arts = useMemo(() => legalArticles(doc.pages ?? []), [doc.pages])
+  const bib = doc.bib ? cleanBib(doc.bib) : null
+  if (!(doc.doc_type === 'legal_text' || bib?.kind === 'legal') || arts.length < 2) return null
+  const want = q.trim().replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+  const shown = want ? arts.filter((a) => a.number === want || a.number.startsWith(`${want} `) || articleName(a).includes(want)) : arts
+  const rtl = bib ? bib.lang !== 'latin' : true
+  return (
+    <Card className="p-5">
+      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink">
+        <ListOrdered className="size-4 text-brand-600" /> فهرس الفصول والمواد <span className="num text-muted">({arts.length})</span>
+      </h3>
+      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="رقم الفصل أو المادة، مثلاً 27" dir="auto" className="mb-2 h-9" />
+      <ul className="max-h-80 space-y-0.5 overflow-y-auto">
+        {shown.map((a) => (
+          <li key={`${a.label}${a.number}`} className="flex items-start gap-1.5">
+            <button
+              type="button"
+              className="min-w-0 flex-1 rounded-lg px-2 py-1 text-start text-[13px] hover:bg-surface-2"
+              onClick={() => setParams({ page: String(a.page_no), hl: articleName(a) }, { replace: true })}
+            >
+              <span className="font-medium text-ink">{articleName(a)}</span>
+              {a.excerpt && <span className="text-muted"> — {a.excerpt}</span>}
+              <span className="num text-subtle"> · ص {a.page_no}</span>
+            </button>
+            <button
+              type="button"
+              title={bib ? 'انسخ الإحالة إلى هذا الفصل' : 'انسخ'}
+              className="mt-1 shrink-0 rounded-md p-1 text-muted hover:bg-surface-2 hover:text-ink"
+              onClick={() => void copyRich(bib ? shortRef(bib, articleName(a)) : [{ t: articleName(a) }], rtl)}
+            >
+              <ClipboardCopy className="size-3.5" />
+            </button>
+          </li>
+        ))}
+        {!shown.length && <li className="px-2 py-1 text-xs text-muted">لا فصل بهذا الرقم في نص الوثيقة.</li>}
+      </ul>
+      {!bib && <p className="mt-2 text-[11px] leading-relaxed text-muted">حضّر مرجع هذا النص (أعلاه) لتُنسخ الإحالة كاملة إلى أي فصل.</p>}
     </Card>
   )
 }
