@@ -10,6 +10,8 @@ export type DriveFile = {
   createdTime?: string
   modifiedTime?: string
   trashed?: boolean
+  /** a shortcut (application/vnd.google-apps.shortcut): the file it points to */
+  shortcutDetails?: { targetId?: string; targetMimeType?: string }
 }
 export type DriveChange = { fileId: string; removed?: boolean; file?: DriveFile }
 export type DriveAbout = {
@@ -136,8 +138,9 @@ export function driveClient(token: TokenSource, base = 'https://www.googleapis.c
       return r.ids
     },
 
-    async get(id: string): Promise<DriveFile | null> {
-      const res = await request(`${api}/files/${encodeURIComponent(id)}?fields=${FIELDS}`, {}, { ok404: true })
+    /** `extra`: more fields than the usual ones (e.g. 'shortcutDetails') */
+    async get(id: string, extra = ''): Promise<DriveFile | null> {
+      const res = await request(`${api}/files/${encodeURIComponent(id)}?fields=${FIELDS}${extra ? `,${extra}` : ''}`, {}, { ok404: true })
       return res.status === 404 ? null : ((await res.json()) as DriveFile)
     },
 
@@ -173,6 +176,11 @@ export function driveClient(token: TokenSource, base = 'https://www.googleapis.c
 
     async download(id: string): Promise<Blob> {
       return (await request(`${api}/files/${encodeURIComponent(id)}?alt=media`, {}, { timeout: 10 * 60_000 })).blob()
+    },
+
+    /** a Google Docs / Sheets / Slides / Drawings file, converted by Google (e.g. to 'application/pdf'; 10 MB at most) */
+    async exportAs(id: string, mime: string): Promise<Blob> {
+      return (await request(`${api}/files/${encodeURIComponent(id)}/export?mimeType=${encodeURIComponent(mime)}`, {}, { timeout: 10 * 60_000 })).blob()
     },
 
     /** «anyone with the link can view» on a file the app made (drive.file allows it): the link, and the permission to take back */

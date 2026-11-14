@@ -30,6 +30,7 @@ export function createFakeDrive() {
         createdTime: now(),
         modifiedTime: now(),
         trashed: false,
+        ...(meta.shortcutDetails ? { shortcutDetails: meta.shortcutDetails } : {}),
       },
       bytes: bytes ?? null,
     }
@@ -239,11 +240,24 @@ export function createFakeDrive() {
         return send(res, 204)
       }
     }
+    // ---- a Google Docs / Sheets / Slides file converted by Google (the stand-in keeps the converted bytes);
+    //      a record's `exportError` answers 403 with that reason (e.g. exportSizeLimitExceeded)
+    if ((mm = m(/^\/drive\/v3\/files\/([^/]+)\/export$/)) && req.method === 'GET') {
+      const f = files.get(decodeURIComponent(mm[1]))
+      if (!f) return error(res, 404, 'notFound', 'File not found')
+      if (!f.meta.mimeType.startsWith('application/vnd.google-apps.')) return error(res, 403, 'fileNotExportable', 'Export only supports Docs Editors files.')
+      if (f.exportError) return error(res, 403, f.exportError, 'This file is too large to be exported.')
+      stats.downloads++
+      res.writeHead(200, { 'Content-Type': url.searchParams.get('mimeType') ?? 'application/pdf' })
+      return res.end(f.bytes ?? Buffer.alloc(0))
+    }
     if ((mm = m(/^\/drive\/v3\/files\/([^/]+)$/))) {
       const f = files.get(decodeURIComponent(mm[1]))
       if (!f) return error(res, 404, 'notFound', 'File not found')
       if (req.method === 'GET') {
         if (url.searchParams.get('alt') === 'media') {
+          if (f.meta.mimeType.startsWith('application/vnd.google-apps.'))
+            return error(res, 403, 'fileNotDownloadable', 'Only files with binary content can be downloaded. Use Export with Docs Editors files.')
           stats.downloads++
           res.writeHead(200, { 'Content-Type': f.meta.mimeType })
           return res.end(f.bytes ?? Buffer.alloc(0))
@@ -280,6 +294,8 @@ export function createFakeDrive() {
   return {
     files,
     stats,
+    /** a file the owner put in Drive (not the app): seed(meta, bytes) → the record */
+    seed: put,
     /** the next n requests answer 503 (to test the retries) */
     failNext: (n) => {
       failNext = n

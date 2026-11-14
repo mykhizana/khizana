@@ -433,6 +433,64 @@ ok('…then the gap is stepped over and it goes in', !(await A.engine.meta()).he
   ok('sweep in the archive: the other device’s taken-back link loses its copy', !fake.files.has(p8.file))
 }
 
+// ------------------------------------------------------------ files picked in Google Drive, brought into the archive
+{
+  const { fetchPicked, importName, PICK_MAX } = await import('../src/drive/import.ts')
+  ok('drive import name: a JPEG named without extension gets .jpg', importName('صورة الجواز', 'image/jpeg') === 'صورة الجواز.jpg')
+  ok('drive import name: a known extension stays, whatever its case', importName('Contrat.PDF', 'application/pdf') === 'Contrat.PDF' && importName('IMG_1.JPEG', 'image/jpeg') === 'IMG_1.JPEG')
+  ok('drive import name: a date in the name is not taken for an extension', importName('Scan 12.05.2024', 'image/png') === 'Scan 12.05.2024.png')
+  ok('drive import name: an unknown type keeps its name', importName('notes.xyz', 'application/octet-stream') === 'notes.xyz')
+  ok('drive import name: no name, or slashes, still give a usable name', importName('  ', 'application/pdf') === 'وثيقة من Google Drive.pdf' && importName('a/b', 'text/plain') === 'a-b.txt')
+
+  const seed = (meta, bytes) => fake.seed(meta, bytes === undefined ? null : Buffer.from(bytes)).meta.id
+  const idPdf = seed({ name: 'عقد الكراء.pdf', mimeType: 'application/pdf' }, '%PDF-1.4 contrat')
+  const idJpg = seed({ name: 'صورة الجواز', mimeType: 'image/jpeg' }, JPEG)
+  const idDoc = seed({ name: 'رسالة.docx', mimeType: 'application/vnd.google-apps.document' }, '%PDF-1.4 from google docs')
+  const idForm = seed({ name: 'استمارة', mimeType: 'application/vnd.google-apps.form' })
+  const idOwn = seed({ name: 'نسخة خزانة.pdf', mimeType: 'application/pdf', appProperties: { kh: 'doc', doc: 'x' } }, '%PDF own')
+  const idCut = seed({ name: 'اختصار العقد', mimeType: 'application/vnd.google-apps.shortcut', shortcutDetails: { targetId: idPdf, targetMimeType: 'application/pdf' } })
+  const idCutGone = seed({ name: 'اختصار ضائع', mimeType: 'application/vnd.google-apps.shortcut', shortcutDetails: { targetId: 'not-there', targetMimeType: 'application/pdf' } })
+  const idBig = seed({ name: 'فيديو.mp4', mimeType: 'video/mp4' }, Buffer.alloc(4096))
+  const idSheet = seed({ name: 'جدول كبير', mimeType: 'application/vnd.google-apps.spreadsheet' }, '%PDF sheet')
+  fake.files.get(idSheet).exportError = 'exportSizeLimitExceeded'
+  const idFolder = seed({ name: 'مجلد الأوراق', mimeType: 'application/vnd.google-apps.folder' })
+  const pick = (id, name) => ({ id, name: name ?? fake.files.get(id)?.meta.name ?? '?' })
+
+  const steps = []
+  const r = await fetchPicked(
+    client,
+    [pick(idPdf), pick(idJpg), pick(idDoc), pick(idForm), pick(idOwn), pick(idCut), pick(idCutGone), pick('deleted-since', 'محذوف'), pick(idBig), pick(idSheet), pick(idFolder)],
+    { max: 2048, onStep: (done, total, name) => steps.push([done, total, name]) },
+  )
+  const got = Object.fromEntries(r.files.map((f) => [f.name, f]))
+  const why = Object.fromEntries(r.skipped.map((s) => [s.name, s.why]))
+  ok('drive import: a PDF comes as it is', got['عقد الكراء.pdf']?.type === 'application/pdf' && (await got['عقد الكراء.pdf'].text()) === '%PDF-1.4 contrat')
+  ok('drive import: a JPEG named without extension comes as .jpg', got['صورة الجواز.jpg']?.type === 'image/jpeg' && got['صورة الجواز.jpg'].size === JPEG.length)
+  ok('drive import: a Google Doc comes as PDF, named without its old .docx', got['رسالة.pdf']?.type === 'application/pdf' && (await got['رسالة.pdf'].text()).includes('from google docs'))
+  ok('drive import: a shortcut brings the file it points to', r.files.filter((f) => f.name === 'عقد الكراء.pdf').length === 2)
+  ok('drive import: a Google Form is left, with the reason', /لا تتحول إلى PDF/.test(why['استمارة'] ?? ''), why['استمارة'])
+  ok('drive import: a copy Khizana made itself is left (already in the archive)', /خزانة نفسها/.test(why['نسخة خزانة.pdf'] ?? ''))
+  ok('drive import: a shortcut to a file out of reach is left', /اختصار/.test(why['اختصار ضائع'] ?? ''))
+  ok('drive import: a file gone since it was picked is left', /لم تعد خزانة تصل إليه/.test(why['محذوف'] ?? ''))
+  ok('drive import: a file over the size limit is left', /أكبر من/.test(why['فيديو.mp4'] ?? ''))
+  ok('drive import: a Google file too big to convert says what to do', /ملف ← تنزيل ← PDF/.test(why['جدول كبير'] ?? ''), why['جدول كبير'])
+  ok('drive import: a folder is left', /مجلد/.test(why['مجلد الأوراق'] ?? ''))
+  ok('drive import: 4 files fetched, 7 left — none lost', r.files.length === 4 && r.skipped.length === 7, `${r.files.length} / ${r.skipped.length}`)
+  ok('drive import: progress before each file, then once at the end', steps.length === 12 && steps[0][0] === 0 && steps[0][1] === 11 && steps.at(-1)[0] === 11)
+  ok('drive import: the originals stay in Drive, untouched', [idPdf, idJpg, idDoc].every((id) => fake.files.has(id) && !fake.files.get(id).meta.trashed))
+
+  // Google's hour running out: the rest stop at once, each with one clear reason
+  token = 'expired'
+  const r2 = await fetchPicked(client, [pick(idPdf), pick(idJpg), pick(idDoc)])
+  token = 'tok'
+  ok('drive import: Google’s hour over → every file says to press again', r2.files.length === 0 && r2.skipped.length === 3 && r2.skipped.every((s) => /انتهت ساعة Google/.test(s.why)))
+
+  // more than one batch can hold
+  const many = Array.from({ length: PICK_MAX + 2 }, (_, i) => pick(idPdf, `n${i}`))
+  const r3 = await fetchPicked(client, many)
+  ok('drive import: beyond the limit of one batch, the rest wait for another', r3.files.length === PICK_MAX && r3.skipped.length === 2 && r3.skipped.every((s) => /دفعة أخرى/.test(s.why)))
+}
+
 // ------------------------------------------------------------ two devices creating an archive at the same moment
 const fake2 = await startFakeDrive(0)
 const client2 = driveClient(async () => 'tok', fake2.url)

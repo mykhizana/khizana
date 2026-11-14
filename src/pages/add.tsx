@@ -1,13 +1,17 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Camera, CheckCircle2, CopyX, FileUp, FolderUp, Loader2, MapPin, ShieldCheck, Sparkles, Upload, XCircle } from 'lucide-react'
+import { Camera, CheckCircle2, CloudDownload, CopyX, FileUp, FolderUp, Loader2, MapPin, ShieldCheck, Sparkles, Upload, XCircle } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import { toast } from 'sonner'
 import { api } from '@/db/api'
 import { idb } from '@/db/idb'
+import { fetchPicked, type Picked, type Skipped } from '@/drive/import'
+import { drive } from '@/drive/sync'
 import { relTime } from '@/lib/format'
 import { useAiMode, useLocations } from '@/lib/queries'
 import { ingestFiles, type IngestItem } from '@/pipeline/ingest'
 import { PageHeader } from '@/ui/bits'
+import { FakeDrivePicker, pickFromDrive, prepareDrive, useCanDrive } from '@/ui/drive-import'
 import { Badge, Button, Card, LinkButton, Progress, cn } from '@/ui/kit'
 import { LocationPicker } from '@/ui/pickers'
 
@@ -26,33 +30,69 @@ export default function AddPage() {
   const folderRef = useRef<HTMLInputElement>(null)
   const photoRef = useRef<HTMLInputElement>(null)
   const loc = locs.find((l) => l.id === locationId)
+  const canDrive = useCanDrive()
+  const [fetching, setFetching] = useState<{ done: number; total: number; name: string } | null>(null)
+  const [fakePick, setFakePick] = useState<((p: Picked[]) => void) | null>(null)
 
-  const run = async (list: File[], kind: string) => {
-    if (!list.length || busyRef.current) return
+  /**
+   * `kind`: the batch (one of the session kinds the database allows); `pre`: files that never reached the
+   * archive (left in Drive), shown with their reason; `source`: where the documents came from
+   */
+  const run = async (list: File[], kind: string, pre: IngestItem[] = [], source = kind) => {
+    if ((!list.length && !pre.length) || busyRef.current) return
     busyRef.current = true
     setBusy(true)
-    setItems([])
+    setItems(pre)
     try {
-      const s = await api.sessionStart(kind, locationId, loc?.name)
-      await ingestFiles(list, {
-        source: kind,
-        sessionId: s.id,
-        locationId,
-        onItem: (it) =>
-          setItems((prev) => {
-            const i = prev.findIndex((x) => x.key === it.key)
-            if (i < 0) return [...prev, it]
-            const n = [...prev]
-            n[i] = it
-            return n
-          }),
-      })
-      await api.sessionEnd(s.id)
+      if (list.length) {
+        const s = await api.sessionStart(kind, locationId, loc?.name)
+        await ingestFiles(list, {
+          source,
+          sessionId: s.id,
+          locationId,
+          onItem: (it) =>
+            setItems((prev) => {
+              const i = prev.findIndex((x) => x.key === it.key)
+              if (i < 0) return [...prev, it]
+              const n = [...prev]
+              n[i] = it
+              return n
+            }),
+        })
+        await api.sessionEnd(s.id)
+      }
     } finally {
       busyRef.current = false
       setBusy(false)
       void qc.invalidateQueries()
     }
+  }
+
+  // files chosen in Google Drive: fetched one by one (Google Docs as PDF), then the same way as any file
+  const fromDrive = async () => {
+    if (busyRef.current) return
+    let picked: Picked[]
+    try {
+      picked = await pickFromDrive(() => new Promise<Picked[]>((resolve) => setFakePick(() => resolve)))
+    } catch (e) {
+      toast.error((e as Error).message)
+      return
+    }
+    if (!picked.length || busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    setItems([])
+    let got: { files: File[]; skipped: Skipped[] } = { files: [], skipped: [] }
+    try {
+      got = await fetchPicked(drive, picked, { onStep: (done, total, name) => setFetching({ done, total, name }) })
+    } finally {
+      setFetching(null)
+      busyRef.current = false
+      setBusy(false)
+    }
+    const left: IngestItem[] = got.skipped.map((s, i) => ({ key: `drive:${i}:${s.id}`, name: s.name, status: 'failed', detail: s.why }))
+    // (a batch of the kind «import»; each document remembers it came from Drive)
+    await run(got.files, 'import', left, 'drive').catch((e: Error) => toast.error(e.message))
   }
 
   // files shared from another app (WhatsApp, gallery…) arrive through the service worker
@@ -135,6 +175,20 @@ export default function AddPage() {
           <Button variant="secondary" icon={FolderUp} onClick={() => folderRef.current?.click()} disabled={busy}>
             اختر مجلداً
           </Button>
+          {canDrive && (
+            <Button
+              variant="secondary"
+              icon={CloudDownload}
+              onClick={() => void fromDrive()}
+              onPointerEnter={prepareDrive}
+              onFocus={prepareDrive}
+              onTouchStart={prepareDrive}
+              disabled={busy}
+              title="اختر ملفات من Google Drive — يبقى الأصل في مكانه"
+            >
+              من Google Drive
+            </Button>
+          )}
           <Button variant="secondary" icon={Camera} className="sm:hidden" onClick={() => photoRef.current?.click()} disabled={busy}>
             صورة سريعة
           </Button>
@@ -145,6 +199,18 @@ export default function AddPage() {
         <input ref={filesRef} type="file" multiple hidden onChange={(e) => run([...(e.target.files ?? [])], 'upload')} />
         <input ref={folderRef} type="file" multiple hidden {...({ webkitdirectory: '', directory: '' } as object)} onChange={(e) => run([...(e.target.files ?? [])], 'folder')} />
         <input ref={photoRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => run([...(e.target.files ?? [])], 'upload')} />
+        {fetching && (
+          <div className="mt-5 w-full max-w-md text-start">
+            <div className="flex items-center gap-2 text-sm text-ink">
+              <Loader2 className="size-4 shrink-0 animate-spin text-brand-600" />
+              <span className="min-w-0 truncate" dir="auto">
+                يُجلب من Google Drive: {Math.min(fetching.done + 1, fetching.total)} من {fetching.total}
+                {fetching.name ? ` — ${fetching.name}` : ''}
+              </span>
+            </div>
+            <Progress value={fetching.total ? fetching.done / fetching.total : 0} className="mt-2" />
+          </div>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-4 text-xs text-muted">
           <span className="inline-flex items-center gap-1.5">
             <ShieldCheck className="size-4 text-success" /> فحص التكرار قبل الرفع
@@ -152,6 +218,11 @@ export default function AddPage() {
           <span className="inline-flex items-center gap-1.5">
             <Sparkles className="size-4 text-brass-500" /> {ai === 'claude' ? 'يقرؤها Claude Opus 5.5' : 'تصنيف تقريبي حتى تربط Claude'}
           </span>
+          {canDrive && (
+            <span className="inline-flex items-center gap-1.5">
+              <CloudDownload className="size-4 text-brand-600" /> من Drive: يبقى الأصل في مكانه
+            </span>
+          )}
         </div>
       </div>
 
@@ -229,6 +300,14 @@ export default function AddPage() {
           setPicking(false)
         }}
       />
+      {fakePick && (
+        <FakeDrivePicker
+          onDone={(p) => {
+            fakePick(p)
+            setFakePick(null)
+          }}
+        />
+      )}
     </div>
   )
 }

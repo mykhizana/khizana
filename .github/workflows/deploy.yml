@@ -22,6 +22,9 @@ jobs:
       # Set it once as a repository variable (gh variable set GOOGLE_CLIENT_ID); while it is empty,
       # each device pastes it in the settings instead.
       VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+      # Optional, public too: a browser API key restricted to the site, for Google's file picker
+      # («من Google Drive» on the add page). Left empty, the picker uses the sign-in token alone.
+      VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
