@@ -44,6 +44,7 @@ import { CatPath, StateBadge, stateReason } from '@/ui/bits'
 import { downloadDoc } from '@/ui/download'
 import { Badge, Button, Card, Dialog, Field, IconButton, Input, Menu, MenuItem, Select, Skeleton, Textarea, cn } from '@/ui/kit'
 import { CategoryPicker, LocationPicker } from '@/ui/pickers'
+import { ReferenceCard } from '@/ui/reference'
 import { AddToDossier, ShareDocDialog } from '@/ui/share'
 import { Viewer } from '@/ui/viewer'
 
@@ -390,6 +391,8 @@ export default function DocPage() {
               <p className="text-[14px] leading-7 text-text">{doc.summary_ar}</p>
             </Card>
           )}
+
+          <ReferenceCard doc={doc} />
 
           <Card className="p-5">
             <div className="mb-1 flex items-center justify-between">

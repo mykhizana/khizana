@@ -1,4 +1,5 @@
 // Shapes returned by the kh_* database functions (see supabase/schema.sql)
+import type { Bib } from './bib'
 
 export type DocState = 'new' | 'reading' | 'understanding' | 'checking' | 'ready' | 'review' | 'error' | 'waiting'
 export type Sensitivity = 'normal' | 'private' | 'vault'
@@ -57,6 +58,21 @@ export type DocLink = {
 export type Deadline = { id: string; document_id: string; kind: string; due_date: string; title: string; done: boolean }
 
 /** a row of the deadline radar */
+// «مراجعي»: a research document and its bibliographic record
+export type RefItem = {
+  id: string
+  title: string
+  title_latin: string | null
+  doc_type: string | null
+  doc_date: string | null
+  languages: string[]
+  bib: Bib | null
+  state: string
+  page_count: number
+  sensitivity: string
+  authors: string[]
+}
+
 // ready dossiers («الملفات الجاهزة») and their share links (kh_dossier_*, kh_share_*)
 export type DossierSummary = { id: string; name: string; notes: string | null; created_at: string; procedure: string | null; documents: number; missing: number; shared: number; has: boolean | null }
 export type DossierItem = {
@@ -182,6 +198,8 @@ export type Doc = {
   deadlines: Deadline[]
   reviews: Review[]
   corrected: string[]
+  /** the bibliographic record («مراجعي», src/lib/bib.ts) */
+  bib?: Bib | null
 }
 
 export type SearchItem = {

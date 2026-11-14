@@ -20,6 +20,7 @@ import type {
   Dossier,
   DossierPlan,
   DossierSummary,
+  RefItem,
   ShareLink,
 } from '@/lib/types'
 
@@ -143,6 +144,8 @@ export const api = {
   shareAdd: (p: { id: string; collection_id?: string | null; document_id?: string | null; label?: string | null; watermark?: string | null; expires_at: string; drive_file: string; permission_id: string; url: string }) =>
     call<{ id: string; expires_at: string }>('kh_share_add', p),
   shareRevoke: (id: string) => call('kh_share_revoke', { id }),
+  /** «مراجعي»: the research documents and their bibliographic records */
+  references: () => call<RefItem[]>('kh_references'),
   exportAll: () => call<{ format: string; version: number; exported_at: string; tables: Record<string, unknown[]> }>('kh_export'),
   importAll: (backup: unknown) => call<{ ok: boolean; rows: number }>('kh_import', backup),
   vaultCount: () => call<{ count: number }>('kh_vault_count'),

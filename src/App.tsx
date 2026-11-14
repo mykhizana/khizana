@@ -22,6 +22,7 @@ const AskPage = lazy(() => import('@/pages/ask'))
 const DeadlinesPage = lazy(() => import('@/pages/deadlines'))
 const DossiersPage = lazy(() => import('@/pages/dossiers'))
 const DossierPage = lazy(() => import('@/pages/dossier'))
+const ReferencesPage = lazy(() => import('@/pages/references'))
 const LibraryPage = lazy(() => import('@/pages/library'))
 const DocPage = lazy(() => import('@/pages/doc'))
 const AddPage = lazy(() => import('@/pages/add'))
@@ -68,6 +69,7 @@ const router = createBrowserRouter(
         { path: 'deadlines', element: page(<DeadlinesPage />) },
         { path: 'dossiers', element: page(<DossiersPage />) },
         { path: 'dossiers/:id', element: page(<DossierPage />) },
+        { path: 'references', element: page(<ReferencesPage />) },
         { path: 'library', element: page(<LibraryPage />) },
         { path: 'doc/:id', element: page(<DocPage />) },
         { path: 'add', element: page(<AddPage />) },

@@ -418,5 +418,48 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('checklist: nothing usable → an empty list, no error', cleanChecklist(null, known).requirements.length === 0 && cleanChecklist({ requirements: 'x' }, known).requirements.length === 0)
 }
 
+// ------------------------------------------------------------ «مراجعي»: references in the owner's citation rules
+{
+  const { fullRef, shortRef, ibid, citedBy, firstCite, plain, html, missing, legalRank, bibliography, cleanBib, shortTitle } = await import('../src/lib/bib.ts')
+  const book = { kind: 'book', lang: 'ar', authors: [{ last: 'بلعيدي', first: 'محمد' }], title: 'القانون الإداري المغربي: الوسائل والنشاط', edition: '2', publisher: 'دار نشر المعرفة', place: 'الرباط', year: '2020' }
+  ok('bib: a book, exactly as in the rules', plain(fullRef(book)) === 'بلعيدي، محمد، القانون الإداري المغربي: الوسائل والنشاط، ط 2، دار نشر المعرفة، الرباط، 2020.')
+  ok('bib: the book title in italics, nothing else', fullRef(book).filter((s) => s.i).map((s) => s.t).join('|') === 'القانون الإداري المغربي: الوسائل والنشاط' && html(fullRef(book)).includes('<i>القانون الإداري'))
+  const floridi = { kind: 'article', lang: 'latin', authors: [{ last: 'Floridi', first: 'Luciano' }], title: 'The Fight for Digital Sovereignty', journal: 'Philosophy & Technology', journal_volume: '33', year: '2020', pages: '369-378' }
+  ok('bib: a foreign article, as in the rules (title in " ", journal in italics)', plain(fullRef(floridi)) === 'Floridi, Luciano, "The Fight for Digital Sovereignty", Philosophy & Technology, vol. 33, 2020, pp. 369-378.' && fullRef(floridi).find((s) => s.i)?.t === 'Philosophy & Technology')
+  const art = { kind: 'article', lang: 'ar', authors: [{ last: 'العلوي', first: 'أحمد' }], title: 'السياسات العمومية والذكاء الاصطناعي', journal: 'المجلة المغربية للإدارة المحلية والتنمية', issue: '150', year: '2023', pages: '45-70' }
+  ok('bib: an Arabic article (title in « », journal in italics, «العدد», «ص.»)', plain(fullRef(art)) === 'العلوي، أحمد، «السياسات العمومية والذكاء الاصطناعي»، المجلة المغربية للإدارة المحلية والتنمية، العدد 150، 2023، ص. 45-70.')
+  const dahir = { kind: 'legal', lang: 'ar', authors: [], title: '', legal_type: 'ظهير شريف', legal_number: '1.11.91', issued_hijri: '27 شعبان 1432', issued: '29 يوليو 2011', purpose: 'بتنفيذ الدستور', bo_number: '5964 مكرر', bo_hijri: '28 شعبان 1432', bo_date: '30 يوليو 2011' }
+  ok('bib: a legal text, exactly as in the rules', plain(fullRef(dahir)) === 'ظهير شريف رقم 1.11.91 صادر في 27 شعبان 1432 (29 يوليو 2011) بتنفيذ الدستور، الجريدة الرسمية عدد 5964 مكرر بتاريخ 28 شعبان 1432 (30 يوليو 2011).')
+  const thesis = { kind: 'thesis', lang: 'ar', authors: [{ last: 'الإدريسي', first: 'سناء' }], title: 'الحكامة الترابية بالمغرب', thesis_type: 'أطروحة دكتوراه', specialty: 'القانون العام', faculty: 'كلية العلوم القانونية والاقتصادية والاجتماعية - أكدال', university: 'جامعة محمد الخامس', country: 'المغرب', year: '2019' }
+  ok('bib: a thesis («تخصص» added once)', plain(fullRef(thesis)) === 'الإدريسي، سناء، الحكامة الترابية بالمغرب، أطروحة دكتوراه، تخصص القانون العام، كلية العلوم القانونية والاقتصادية والاجتماعية - أكدال، جامعة محمد الخامس، المغرب، 2019.')
+  ok('bib: «مرجع سابق» with the short title', plain(shortRef(book, '45')) === 'بلعيدي، محمد، القانون الإداري المغربي، مرجع سابق، ص. 45.')
+  ok('bib: op. cit. for a foreign work', plain(shortRef(floridi, '372')) === 'Floridi, Luciano, "The Fight for Digital Sovereignty", op. cit., p. 372.')
+  ok('bib: «المرجع نفسه» and Ibid.', plain(ibid(book, '46')) === 'المرجع نفسه، ص. 46.' && plain(ibid(floridi, '12-14')) === 'Ibid., pp. 12-14')
+  ok('bib: «نقلاً عن» carries the full reference of the carrying source', plain(citedBy(book, '12')) === 'نقلاً عن بلعيدي، محمد، القانون الإداري المغربي: الوسائل والنشاط، ط 2، دار نشر المعرفة، الرباط، 2020، ص. 12.')
+  ok('bib: a first citation of a page (an article: that page, not its range)', plain(firstCite(book, '45')).endsWith('2020، ص. 45.') && plain(firstCite(art, '50')).endsWith('2023، ص. 50.'))
+  ok('bib: a legal text cited at an article («الفصل 27» kept as typed)', plain(shortRef(dahir, 'الفصل 27')) === 'ظهير شريف رقم 1.11.91، مرجع سابق، الفصل 27.')
+  ok('bib: no colon is ever added (only the titles keep theirs)', [floridi, art, dahir, thesis].every((b) => !plain(fullRef(b)).includes(':')) && !plain(shortRef(book, '1')).includes(':'))
+  const gap = { kind: 'book', lang: 'ar', authors: [{ last: 'بناني', first: 'فاطمة' }], title: 'المالية العمومية', year: '2018' }
+  ok('bib: nothing invented — the missing parts show, to be filled', plain(fullRef(gap)) === 'بناني، فاطمة، المالية العمومية، [؟ دار النشر]، [؟ بلد النشر]، 2018.' && missing(gap).join('|') === 'دار النشر|بلد النشر')
+  ok('bib: the short title stops at the subtitle (seven words at most)', shortTitle('الحق في الحصول على المعلومات: دراسة في القانون 31.13') === 'الحق في الحصول على المعلومات' && shortTitle('one two three four five six seven eight nine') === 'one two three four five six seven')
+  const law = { ...dahir, legal_number: '1.18.15', purpose: 'بتنفيذ القانون رقم 31.13 المتعلق بالحق في الحصول على المعلومات', issued: '22 فبراير 2018' }
+  const org = { ...dahir, legal_number: '1.15.83', purpose: 'بتنفيذ القانون التنظيمي رقم 113.14 المتعلق بالجماعات', issued: '7 يوليو 2015' }
+  const decree = { kind: 'legal', lang: 'ar', authors: [], title: '', legal_type: 'مرسوم', legal_number: '2.18.181', issued: '2018' }
+  ok('bib: legal texts from the highest norm down (constitution, organic law, law, decree)', [legalRank(dahir), legalRank(org), legalRank(law), legalRank(decree)].join() === '0,1,2,4')
+  const bibs = bibliography([decree, floridi, art, law, book, org, dahir, thesis].map((b, i) => ({ id: String(i), bib: b })))
+  ok('bibliography: Arabic first, then the foreign references', bibs.map((p) => p.lang).join() === 'ar,latin' && bibs[1].sections[0].title === 'Articles')
+  ok('bibliography: legal texts first, in the order of the norms', bibs[0].sections[0].title === 'النصوص القانونية' && bibs[0].sections[0].items.map((x) => x.bib.legal_number).join() === '1.11.91,1.15.83,1.18.15,2.18.181')
+  ok('bibliography: then books, theses, articles', bibs[0].sections.map((s) => s.title).join('|') === 'النصوص القانونية|الكتب|الأطروحات والرسائل|المقالات')
+  const c = cleanBib({ kind: 'nonsense', lang: 'fr', title: '  Titre  ', authors: [{ last: 'Dupont', first: '' }, {}, 'x'], publisher: 42, year: '2001' }, 'report')
+  ok('bib: a record made safe (unknown kind → the type of the document, French → Latin, junk dropped)', c.kind === 'report' && c.lang === 'latin' && c.title === 'Titre' && c.authors.length === 1 && c.publisher === undefined && c.year === '2001')
+
+  const { docx } = await import('../src/lib/docx.ts')
+  const { unzipSync, strFromU8 } = await import('fflate')
+  const z = unzipSync(docx([{ segs: [{ t: 'لائحة المراجع' }], style: 'Title', rtl: true }, { segs: fullRef(book), rtl: true }, { segs: fullRef(floridi), rtl: false }]))
+  const xml = strFromU8(z['word/document.xml'])
+  ok('word: a real .docx (content types, document, styles)', !!z['[Content_Types].xml'] && !!z['word/styles.xml'] && !!z['_rels/.rels'] && xml.startsWith('<?xml'))
+  ok('word: Arabic paragraphs right-to-left, titles in italics (Arabic italics too)', (xml.match(/<w:bidi\/>/g) ?? []).length >= 3 && /<w:rPr><w:rtl\/><w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">القانون الإداري/.test(xml) && /<w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">Philosophy &amp; Technology/.test(xml))
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

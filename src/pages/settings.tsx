@@ -21,7 +21,7 @@ import { ensurePersistence } from '@/lib/storage'
 import { DriveSettings } from '@/ui/drive'
 import { DeviceVaultSettings } from '@/ui/vault'
 
-const OPS: Record<string, string> = { transcribe: 'قراءة الصفحات', understand: 'الفهم والتصنيف', split: 'فصل الرزم', judge: 'مقارنة المتشابهات', query: 'فهم البحث', ask: 'اسأل خزانتك', plan: 'قوائم الملفات الجاهزة', test: 'اختبار' }
+const OPS: Record<string, string> = { transcribe: 'قراءة الصفحات', understand: 'الفهم والتصنيف', split: 'فصل الرزم', judge: 'مقارنة المتشابهات', query: 'فهم البحث', ask: 'اسأل خزانتك', plan: 'قوائم الملفات الجاهزة', bib: 'بيانات المراجع', test: 'اختبار' }
 
 function Block({ id, icon: Icon, title, children, desc }: { id?: string; icon: React.ComponentType<{ className?: string }>; title: string; desc?: string; children: React.ReactNode }) {
   return (

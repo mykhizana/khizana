@@ -268,6 +268,8 @@ create table if not exists public.kh_documents (
 -- columns added after the first version (safe on an existing database)
 alter table public.kh_documents add column if not exists claimed_at timestamptz;
 alter table public.kh_documents add column if not exists claimed_by text;
+-- the bibliographic record of a research document («مراجعي»: src/lib/bib.ts formats it in the owner's citation rules)
+alter table public.kh_documents add column if not exists bib jsonb;
 create index if not exists kh_documents_owner on public.kh_documents (owner_id, created_at desc);
 create index if not exists kh_documents_search on public.kh_documents using gin (search);
 create index if not exists kh_documents_category on public.kh_documents (category_id);
@@ -1010,7 +1012,8 @@ begin
     languages = case when f ? 'languages' then public.kh_jtext(f -> 'languages') else languages end,
     status = case when f ? 'status' then coalesce(f -> 'status', '{}') else status end,
     source = case when f ? 'source' then coalesce(nullif(f ->> 'source', ''), source) else source end,
-    state = case when f ? 'state' then f ->> 'state' else state end
+    state = case when f ? 'state' then f ->> 'state' else state end,
+    bib = case when f ? 'bib' then (case when jsonb_typeof(f -> 'bib') = 'object' then f -> 'bib' end) else bib end
   where id = did;
   if f ? 'expiry_date' and public.kh_date(f ->> 'expiry_date') is not null then
     insert into public.kh_deadlines (id, document_id, kind, due_date, title)
@@ -2176,6 +2179,21 @@ language sql stable set search_path = public, extensions as $$
     and (not coalesce((p ->> 'open')::boolean, false) or not s.revoked)
     and (p ->> 'collection_id' is null or s.collection_id = public.kh_uuid(p ->> 'collection_id'))
     and (p ->> 'document_id' is null or s.document_id = public.kh_uuid(p ->> 'document_id'))
+$$;
+
+-- «مراجعي»: the documents a researcher cites (books, articles, theses, legal texts, reports, rulings, and
+-- anything given a bibliographic record), with their record and the authors the AI found
+create or replace function public.kh_references(p jsonb default '{}') returns jsonb
+language sql stable set search_path = public, extensions as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', d.id, 'title', coalesce(d.title_ar, d.title, d.file_name), 'title_latin', d.title,
+      'doc_type', d.doc_type, 'doc_date', d.doc_date, 'languages', d.languages, 'bib', d.bib, 'state', d.state, 'page_count', d.page_count,
+      'sensitivity', d.sensitivity,
+      'authors', coalesce((select jsonb_agg(coalesce(de.as_written, e.name) order by e.name) from public.kh_doc_entities de
+                  join public.kh_entities e on e.id = de.entity_id where de.document_id = d.id and de.role = 'author'), '[]'::jsonb))
+      order by d.doc_date nulls last, d.created_at), '[]'::jsonb)
+  from public.kh_documents d
+  where d.owner_id = auth.uid() and d.deleted_at is null
+    and (d.bib is not null or d.doc_type in ('book', 'article', 'thesis', 'legal_text', 'report', 'court_ruling'))
 $$;
 
 -- a full copy of the owner's rows (files are copied by the app); used for backups and moving to the cloud

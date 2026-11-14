@@ -2,6 +2,7 @@
 import {
   AlarmClock,
   Archive,
+  BookMarked,
   Camera,
   CircleDot,
   Cloud,
@@ -40,6 +41,7 @@ const NAV = [
   { to: '/ask', label: 'اسأل خزانتك', icon: MessagesSquare },
   { to: '/deadlines', label: 'الآجال', icon: AlarmClock },
   { to: '/dossiers', label: 'الملفات الجاهزة', icon: FolderCheck },
+  { to: '/references', label: 'مراجعي', icon: BookMarked },
   { to: '/library', label: 'المكتبة والرفوف', icon: Library },
   { to: '/review', label: 'تحتاج قرارك', icon: Inbox, badge: true },
   { to: '/people', label: 'الأشخاص والجهات', icon: Users },

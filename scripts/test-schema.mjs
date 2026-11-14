@@ -417,6 +417,28 @@ ok('radar list: a closed vault hides its deadlines', !(await call('kh_deadlines_
   ok('dossier: deleted, with its links', !(await call('kh_dossiers_list')).some((x) => x.id === dz.id) && !(await call('kh_shares_list')).some((x) => x.collection_id === dz.id))
   claims = '{"aal":"aal1"}'
 }
+// «مراجعي»: the bibliographic record of a research document
+{
+  const lec = await call('kh_doc_create', { file_name: 'droit-admin.pdf', page_count: 1, pages: [{ page_no: 1, text: 'القانون الإداري المغربي' }] })
+  await call('kh_doc_update', { id: lec.id, fields: { doc_type: 'book', title_ar: 'القانون الإداري المغربي' } })
+  ok('references: a book is listed even before its record is made', (await call('kh_references')).some((x) => x.id === lec.id && x.bib === null && x.doc_type === 'book'))
+  const bib = { kind: 'book', lang: 'ar', authors: [{ last: 'بلعيدي', first: 'محمد' }], title: 'القانون الإداري المغربي', year: '2020', source: 'owner', checked: true }
+  await call('kh_doc_update', { id: lec.id, fields: { bib }, by_owner: false })
+  const got = (await call('kh_references')).find((x) => x.id === lec.id)
+  ok('references: the record is kept as given', got?.bib?.authors?.[0]?.last === 'بلعيدي' && got.bib.checked === true && (await call('kh_doc_get', { id: lec.id })).bib.title === 'القانون الإداري المغربي')
+  await call('kh_doc_update', { id: lec.id, fields: { bib: 'not an object' }, by_owner: false })
+  ok('references: a record that is not an object is not stored', (await call('kh_doc_get', { id: lec.id })).bib === null)
+  await call('kh_doc_update', { id: lec.id, fields: { bib }, by_owner: false })
+  await call('kh_doc_update', { id: lec.id, fields: { title_ar: 'عنوان آخر' } })
+  ok('references: other changes leave the record alone', (await call('kh_doc_get', { id: lec.id })).bib?.authors?.[0]?.first === 'محمد')
+  await call('kh_doc_update', { id: d3.id, fields: { bib: { kind: 'other', lang: 'ar', authors: [], title: 'ملخص' } }, by_owner: false })
+  ok('references: any document given a record is listed (notes, lectures…)', (await call('kh_references')).some((x) => x.id === d3.id))
+  await call('kh_doc_delete', { id: lec.id })
+  ok('references: a document in the trash is not', !(await call('kh_references')).some((x) => x.id === lec.id))
+  current = B
+  ok('references: another account sees none of them', (await call('kh_references')).length === 0)
+  current = A
+}
 ok('vault metadata hidden: corrections / links', (await asUser(`select 1 from public.kh_corrections where document_id = $1 union all select 1 from public.kh_links where from_id = $1 or to_id = $1`, [pass1.id])).length === 0)
 ok('vault metadata hidden: its pages and fingerprints', (await asUser(`select 1 from public.kh_pages where document_id = $1 union all select 1 from public.kh_lsh where document_id = $1`, [pass1.id])).length === 0)
 
