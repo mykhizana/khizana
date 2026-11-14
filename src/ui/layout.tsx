@@ -28,6 +28,7 @@ import { useAiMode, useCounts, useQueue } from '@/lib/queries'
 import { queue } from '@/pipeline/queue'
 import { Logo } from './bits'
 import { DriveBanner, DriveChip } from './drive'
+import { StorageBanner } from './storage'
 import { Badge, Button, Dialog, IconButton, Progress, cn } from './kit'
 
 const NAV = [
@@ -220,6 +221,7 @@ export function Shell() {
 
       <main className="pb-28 lg:ms-[264px] lg:pb-10">
         <div className="mx-auto max-w-6xl px-4 pt-5 sm:px-6 sm:pt-7">
+          {MODE === 'local' && <StorageBanner />}
           {MODE === 'local' && <DriveBanner />}
           <Outlet />
         </div>

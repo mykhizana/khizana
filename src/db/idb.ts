@@ -51,11 +51,4 @@ export const idb = {
       return null
     }
   },
-  async persist(): Promise<boolean> {
-    try {
-      return (await navigator.storage?.persist?.()) ?? false
-    } catch {
-      return false
-    }
-  },
 }

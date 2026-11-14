@@ -255,5 +255,14 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('parse: no object → an error (the document is retried later)', threw)
 }
 
+// ------------------------------------------------------------ storage at risk (a nearly full disk)
+{
+  const { storageRisk } = await import('../src/lib/storage.ts')
+  ok('storage: the owner\'s case (552 MB quota, 0.5 GB left on C:) is critical', storageRisk(552e6, 10e6) === 'critical')
+  ok('storage: under 2 GB left is low, plenty is ok', storageRisk(1.5e9, 50e6) === 'low' && storageRisk(9e9, 50e6) === 'ok')
+  ok('storage: a nearly full quota is at risk too', storageRisk(9e9, 8.5e9) === 'critical' && storageRisk(9e9, 7e9) === 'low')
+  ok('storage: an unknown quota raises no alarm', storageRisk(0, 0) === 'ok')
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

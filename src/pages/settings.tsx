@@ -16,6 +16,8 @@ import { exportEverything, importEverything } from '@/ui/download'
 import { Badge, Button, Card, Field, Input, Progress, cn } from '@/ui/kit'
 import { useTheme } from '@/ui/layout'
 import { MfaSettings, VaultBackupNote } from '@/ui/mfa'
+import { useStorageHealth } from '@/ui/storage'
+import { ensurePersistence } from '@/lib/storage'
 import { DriveSettings } from '@/ui/drive'
 import { DeviceVaultSettings } from '@/ui/vault'
 
@@ -70,6 +72,7 @@ export default function SettingsPage() {
   const autonomy = (settings?.autonomy as string) ?? 'ask'
   const reading = readingMode(settings?.reading_mode)
   const economyIssue = economyProblem()
+  const health = useStorageHealth()
 
   const saveKey = async () => {
     if (!key.trim().startsWith('sk-ant-')) return toast.error('مفتاح Claude يبدأ بـ sk-ant-')
@@ -322,6 +325,30 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+          {MODE === 'local' && health && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {health.persisted ? (
+                <Badge tone="success" icon={ShieldCheck}>
+                  حفظ دائم: لن يحذف المتصفح بيانات خزانة من تلقاء نفسه
+                </Badge>
+              ) : (
+                <>
+                  <Badge tone="warning">قد يحذف المتصفح بيانات خزانة إن امتلأ القرص</Badge>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={async () => {
+                      const ok = await ensurePersistence(true)
+                      if (ok) toast.success('صار الحفظ دائماً')
+                      else toast('لم يوافق المتصفح بعد. أضف خزانة إلى الشاشة الرئيسية (تثبيت التطبيق) أو إلى المفضلة، ثم أعد المحاولة. وأبقِ Google Drive مربوطاً.')
+                    }}
+                  >
+                    اطلب الحفظ الدائم
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
           {MODE === 'cloud' && (
             <Button
               variant="ghost"

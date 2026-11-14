@@ -4,8 +4,8 @@ import { createBrowserRouter, Navigate, RouterProvider, useParams } from 'react-
 import { Toaster } from 'sonner'
 import { AlertTriangle } from 'lucide-react'
 import { api } from '@/db/api'
-import { idb } from '@/db/idb'
 import { BASE, MODE } from '@/lib/config'
+import { ensurePersistence } from '@/lib/storage'
 import { queryClient } from '@/lib/queries'
 import { setOwner } from '@/lib/session'
 import { queue } from '@/pipeline/queue'
@@ -113,7 +113,8 @@ export function App() {
       setState('ready')
       queue.kick()
       if (MODE === 'local') {
-        void idb.persist()
+        // ask the browser never to delete the archive by itself (it may refuse: see the storage banner)
+        void ensurePersistence()
         void driveSync.start()
         if (back && back !== '/') void router.navigate(back)
       }
