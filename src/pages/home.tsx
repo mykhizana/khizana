@@ -1,4 +1,4 @@
-import { AlarmClock, Archive, ArrowLeft, Camera, CopyCheck, FileStack, FolderTree, Inbox, KeyRound, MessagesSquare, Search, Sparkles, Upload, Users } from 'lucide-react'
+import { AlarmClock, Archive, ArrowLeft, BookMarked, Camera, CopyCheck, FileStack, FolderCheck, FolderTree, Inbox, KeyRound, MessagesSquare, Network, Search, Sparkles, Upload, Users } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
@@ -9,6 +9,7 @@ import { useAiMode, useCategories, useCounts, useOverview, useQueue } from '@/li
 import { DocTile } from '@/ui/bits'
 import { Badge, Card, Empty, LinkButton, Section, Skeleton, Stat, cn } from '@/ui/kit'
 import { VaultUnlock } from '@/ui/mfa'
+import { WhatsNew } from '@/ui/whatsnew'
 
 const EXAMPLES = ['محاضرات القانون الإداري', 'جواز السفر', 'الدكتور بنعلي 2018', 'Sanitas', 'شهادة الماستر']
 
@@ -81,6 +82,8 @@ export default function Home() {
 
       <VaultUnlock count={vault ?? 0} onOpen={() => qc.invalidateQueries()} />
 
+      <WhatsNew />
+
       {ai === 'demo' && (
         <Card className="flex flex-wrap items-center gap-4 border-warning/30 bg-warning-bg p-4">
           <KeyRound className="size-6 shrink-0 text-warning" />
@@ -148,6 +151,20 @@ export default function Home() {
               </div>
             </Card>
           </Link>
+
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { to: '/dossiers', icon: FolderCheck, label: 'الملفات الجاهزة', hint: 'PDF ورابط' },
+              { to: '/references', icon: BookMarked, label: 'مراجعي', hint: 'بقواعد توثيقك' },
+              { to: '/relations', icon: Network, label: 'خريطة العلاقات', hint: 'من يرتبط بمن' },
+            ].map((t) => (
+              <Link key={t.to} to={t.to} className="rounded-2xl border border-line bg-surface p-3 text-center transition-colors hover:border-brand-500">
+                <t.icon className="mx-auto size-5 text-brand-600" />
+                <div className="mt-1.5 text-[13px] font-medium leading-tight text-ink">{t.label}</div>
+                <div className="mt-0.5 text-[11px] leading-tight text-muted">{t.hint}</div>
+              </Link>
+            ))}
+          </div>
 
           {(queue.running.length > 0 || queue.pending > 0) && (
             <Card className="p-5">
