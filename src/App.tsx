@@ -18,6 +18,7 @@ import { Shell } from '@/ui/layout'
 
 const Home = lazy(() => import('@/pages/home'))
 const SearchPage = lazy(() => import('@/pages/search'))
+const AskPage = lazy(() => import('@/pages/ask'))
 const LibraryPage = lazy(() => import('@/pages/library'))
 const DocPage = lazy(() => import('@/pages/doc'))
 const AddPage = lazy(() => import('@/pages/add'))
@@ -60,6 +61,7 @@ const router = createBrowserRouter(
       children: [
         { index: true, element: page(<Home />) },
         { path: 'search', element: page(<SearchPage />) },
+        { path: 'ask', element: page(<AskPage />) },
         { path: 'library', element: page(<LibraryPage />) },
         { path: 'doc/:id', element: page(<DocPage />) },
         { path: 'add', element: page(<AddPage />) },

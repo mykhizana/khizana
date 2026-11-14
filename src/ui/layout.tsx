@@ -8,6 +8,7 @@ import {
   Home,
   Inbox,
   Library,
+  MessagesSquare,
   Menu as MenuIcon,
   Moon,
   Pause,
@@ -34,6 +35,7 @@ import { Badge, Button, Dialog, IconButton, Progress, cn } from './kit'
 const NAV = [
   { to: '/', label: 'الرئيسية', icon: Home, end: true },
   { to: '/search', label: 'البحث', icon: Search },
+  { to: '/ask', label: 'اسأل خزانتك', icon: MessagesSquare },
   { to: '/library', label: 'المكتبة والرفوف', icon: Library },
   { to: '/review', label: 'تحتاج قرارك', icon: Inbox, badge: true },
   { to: '/people', label: 'الأشخاص والجهات', icon: Users },

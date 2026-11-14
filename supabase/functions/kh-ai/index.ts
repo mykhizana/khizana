@@ -13,8 +13,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2.119.0'
 const MODEL = 'claude-opus-5-5'
 // the app may ask for Sonnet 5.5 (half the price) for a big import; nothing else
 const MODELS = new Set([MODEL, 'claude-sonnet-5-5'])
-const OPS = new Set(['transcribe', 'understand', 'split', 'judge', 'query', 'test'])
-const MAX_TOKENS: Record<string, number> = { transcribe: 32000, understand: 16000, split: 8000, judge: 6000, query: 3000, test: 2000 }
+const OPS = new Set(['transcribe', 'understand', 'split', 'judge', 'query', 'ask', 'test'])
+const MAX_TOKENS: Record<string, number> = { transcribe: 32000, understand: 16000, split: 8000, judge: 6000, query: 3000, ask: 8000, test: 2000 }
 
 // $ per million tokens; cache writes (5 min) = 1.25 × input
 const PRICES: Record<string, { in: number; out: number; cacheRead: number }> = {
@@ -90,6 +90,8 @@ Deno.serve(async (req) => {
     messages: p.messages,
     max_tokens: Math.min(Number(p.max_tokens) || 4000, MAX_TOKENS[op]),
     output_config: p.output_config,
+    // «اسأل خزانتك»: the app's own tools (search and read run in the browser, not here)
+    ...(op === 'ask' && Array.isArray(p.tools) ? { tools: p.tools, ...(p.tool_choice ? { tool_choice: p.tool_choice } : {}) } : {}),
     // Opus: a declined request is retried on the server's default fallback; a Sonnet refusal goes back to the app, which asks Opus
     ...(model.startsWith('claude-opus') ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
   }

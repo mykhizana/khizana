@@ -264,5 +264,36 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('storage: an unknown quota raises no alarm', storageRisk(0, 0) === 'ok')
 }
 
+// ------------------------------------------------------------ «اسأل خزانتك»: tools' output and citations
+{
+  const { parsePages, hitsBrief, docBrief, splitCitations, citedIds, UUID } = await import('../src/ai/ask-format.ts')
+  ok('ask: page ranges', JSON.stringify(parsePages('1-3,7', 10)) === '[1,2,3,7]' && JSON.stringify(parsePages('9-12', 10)) === '[9,10]' && JSON.stringify(parsePages('5-2', 9)) === '[2,3,4,5]' && parsePages('', 5) === null && parsePages('abc', 5) === null && parsePages(undefined, 5) === null)
+  const id1 = '11111111-2222-4333-8444-555555555555'
+  const hit = { id: id1, title: 'Contrato de alquiler', title_ar: 'عقد إيجار سكن مفروش', file_name: 'c.pdf', summary_ar: 'عقد إيجار', doc_type: 'contract', doc_date: '2025-10-13', date_precision: 'day', academic_year: null, expiry_date: '2026-10-12', languages: ['es'], state: 'ready', state_detail: null, page_count: 8, sensitivity: 'private', favorite: false, pinned_offline: false, created_at: '', deleted_at: null, category_id: 'c', category_path: [{ id: 'a', name: 'السكن والعقار' }], proposal_id: null, proposal_name: null, location: 'صندوق 3', thumb: null, people: [], rank: 1, best_page: 2, snippet: 'La duración del contrato es de doce meses' }
+  const brief = hitsBrief([hit], 3)
+  ok('ask: search hits carry id, title, dates, shelf, original and the best passage', brief.includes(id1) && brief.includes('عقد إيجار سكن مفروش') && brief.includes('valid until: 2026-10-12') && brief.includes('السكن والعقار') && brief.includes('صندوق 3') && brief.includes('(page 2)') && brief.startsWith('3 document(s)'))
+  ok('ask: no hit → advice to search again differently', hitsBrief([], 0).includes('Try other words'))
+  const doc = {
+    ...hit, source: 'upload', category_id: 'c', proposal_id: null, category_confidence: 0.9, period_start: '2025-10-13', period_end: '2026-10-12',
+    identifiers: [{ kind: 'reference', value: 'R-77' }], status: { is_copy: true, apostille: false }, keywords: [], visual_features: null, ai_reason: null, ai_confidence: null, ai_model: 'claude-sonnet-5-5', ai_mode: 'claude',
+    needs_ocr: false, text_chars: 0, text_hash: null, original_location_id: null, original_note: 'الدرج الأعلى', tags: [], updated_at: '', processed_at: null, session_id: null,
+    proposal: null, location: { id: 'l', code: 'B3', name: 'صندوق 3', kind: 'box', place: 'بيت العائلة', notes: null, parent_id: null, created_at: '' }, files: [],
+    entities: [{ id: 'e', kind: 'person', name: 'ياسر', name_latin: 'Yassir', honorific: null, role: 'signatory', as_written: null, confirmed: true }],
+    links: [], deadlines: [{ id: 'd', document_id: id1, kind: 'expiry', due_date: '2026-10-12', title: 'نهاية العقد', done: false }], reviews: [], corrected: [],
+    pages: Array.from({ length: 8 }, (_, i) => ({ page_no: i + 1, text: `نص الصفحة ${i + 1} `.repeat(400), blank: false, legibility: 'good', text_source: 'ocr', width: null, height: null })),
+  }
+  const full = docBrief(doc, null, 9000)
+  ok('ask: the card comes first (dates, identifiers, people, status, original, deadlines)', full.includes('period: 2025-10-13 → 2026-10-12') && full.includes('reference: R-77') && full.includes('ياسر / Yassir (person, signatory)') && full.includes('Status: a copy') && full.includes('صندوق 3 — بيت العائلة — الدرج الأعلى') && full.includes('2026-10-12 — نهاية العقد'))
+  ok('ask: a long document is cut, saying which pages to ask for', full.length < 9600 && /Pages not shown: [\d, ]+\. Ask for them with pages/.test(full))
+  const two = docBrief(doc, parsePages('7-8', 8))
+  ok('ask: asked pages only', two.includes('--- page 7 ---') && two.includes('--- page 8 ---') && !two.includes('--- page 1 ---'))
+  const answer = `ينتهي العقد يوم 12 أكتوبر 2026 [[doc:${id1}|p:2]]، ومدته سنة [[doc:${id1}]].\nانظر [[doc:${id1.toUpperCase()}|page 3]] و[[doc:99999999-2222-4333-8444-555555555555|p:1]] [[doc:${id1}|p:`
+  const parts = splitCitations(answer)
+  const cites = parts.filter((p) => p.kind === 'cite')
+  ok('ask: citations parsed (page or not, any case); a half-written one at the end is dropped', cites.length === 4 && cites[0].page === 2 && cites[1].page === null && cites[2].page === 3 && cites[2].id === id1 && !parts.some((p) => p.kind === 'text' && p.text.includes('[[')))
+  ok('ask: cited documents once each, in order', JSON.stringify(citedIds(answer)) === JSON.stringify([id1, '99999999-2222-4333-8444-555555555555']))
+  ok('ask: ids are checked before reading', UUID.test(id1) && !UUID.test('1; drop table'))
+}
+
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

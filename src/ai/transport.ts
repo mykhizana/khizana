@@ -113,18 +113,35 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
 // ------------------------------------------------------------------ one request
 type Msg = { content: { type: string; text?: string }[]; model: string; usage: Usage; stop_reason: string | null; stop_details?: { explanation?: string | null } | null }
 
-/** one call from this browser with the owner's key */
-async function callClaude(key: string, model: string, params: AiParams): Promise<Msg> {
+/** device mode writes its own usage rows (in the cloud the AI function does it) */
+async function recordUsage(op: string, msg: Msg, documentId?: string) {
+  await api
+    .usageAdd({
+      op,
+      model: msg.model,
+      document_id: documentId,
+      input_tokens: msg.usage.input_tokens ?? 0,
+      output_tokens: msg.usage.output_tokens ?? 0,
+      cache_read_tokens: msg.usage.cache_read_input_tokens ?? 0,
+      cache_write_tokens: msg.usage.cache_creation_input_tokens ?? 0,
+      cost_usd: costOf(msg.model, msg.usage),
+    })
+    .catch(() => undefined)
+}
+
+/** one call from this browser with the owner's key; `onText` receives the answer as it is written */
+async function callClaude(key: string, model: string, body: object, onText?: (delta: string) => void): Promise<Msg> {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true, maxRetries: 4, timeout: 10 * 60 * 1000 })
   try {
     const stream = client.beta.messages.stream({
       model,
-      ...(params as object),
+      ...body,
       // Opus: a policy decline is retried automatically on the server's default fallback model.
       // Sonnet: the app itself hands a declined document to Opus (see send).
       ...(isOpus(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } : {}),
     } as Parameters<typeof client.beta.messages.stream>[0])
+    if (onText) stream.on('text', (delta) => onText(delta))
     return (await stream.finalMessage()) as unknown as Msg
   } catch (e) {
     const status = e instanceof Anthropic.APIError ? e.status : undefined
@@ -187,19 +204,7 @@ export async function send<T>(op: string, params: AiParams, opts: { documentId?:
       }
       throw e
     }
-    const cost = costOf(msg.model, msg.usage)
-    await api
-      .usageAdd({
-        op,
-        model: msg.model,
-        document_id: opts.documentId,
-        input_tokens: msg.usage.input_tokens ?? 0,
-        output_tokens: msg.usage.output_tokens ?? 0,
-        cache_read_tokens: msg.usage.cache_read_input_tokens ?? 0,
-        cache_write_tokens: msg.usage.cache_creation_input_tokens ?? 0,
-        cost_usd: cost,
-      })
-      .catch(() => undefined)
+    await recordUsage(op, msg, opts.documentId)
   }
   const costUsd = costOf(msg.model, msg.usage)
   if (spend) spend.cost += costUsd
@@ -217,6 +222,45 @@ export async function send<T>(op: string, params: AiParams, opts: { documentId?:
     throw new AiError('جواب غير مفهوم من النموذج', 'parse')
   }
   return { data, model: msg.model, usage: msg.usage, costUsd }
+}
+
+// ------------------------------------------------------------------ a conversation turn with tools («اسأل خزانتك»)
+export type ChatBlock = { type: string } & Record<string, unknown>
+export type ChatMessage = { role: 'user' | 'assistant'; content: string | ChatBlock[] }
+export type ChatTool = { name: string; description: string; input_schema: Record<string, unknown> }
+export type ChatTurn = { content: ChatBlock[]; stop_reason: string | null; model: string; costUsd: number }
+
+/**
+ * One turn of a conversation in which Claude may call the app's tools (src/ai/ask.ts runs them).
+ * The assistant's content comes back whole (thinking blocks included) so it can be sent back as is.
+ * `noTools`: the last turn of a question — Claude must answer with what it has.
+ */
+export async function converse(
+  req: { system: AiParams['system']; messages: ChatMessage[]; tools: ChatTool[]; max_tokens: number; effort?: 'low' | 'medium' | 'high'; noTools?: boolean },
+  opts: { op: string; estimate: number; model?: string; onText?: (delta: string) => void },
+): Promise<ChatTurn> {
+  const model = opts.model ?? MODEL
+  await checkBudget(opts.estimate)
+  const body = {
+    system: req.system,
+    messages: req.messages,
+    tools: req.tools,
+    max_tokens: req.max_tokens,
+    output_config: { effort: req.effort ?? 'medium' },
+    ...(req.noTools ? { tool_choice: { type: 'none' } } : {}),
+  }
+  let msg: Msg
+  if (MODE === 'cloud') {
+    msg = (await invoke<{ message: Msg }>({ op: opts.op, params: body, model })).message
+  } else {
+    const key = await getLocalKey()
+    if (!key) throw new AiError('لم يُضف مفتاح Claude بعد', 'auth')
+    msg = await callClaude(key, model, body, opts.onText)
+    await recordUsage(opts.op, msg)
+  }
+  const costUsd = costOf(msg.model, msg.usage)
+  if (spend) spend.cost += costUsd
+  return { content: msg.content as ChatBlock[], stop_reason: msg.stop_reason, model: msg.model, costUsd }
 }
 
 const PING: AiParams = {

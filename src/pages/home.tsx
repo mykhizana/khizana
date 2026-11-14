@@ -1,4 +1,4 @@
-import { AlarmClock, Archive, ArrowLeft, Camera, CopyCheck, FileStack, FolderTree, Inbox, KeyRound, Search, Sparkles, Upload, Users } from 'lucide-react'
+import { AlarmClock, Archive, ArrowLeft, Camera, CopyCheck, FileStack, FolderTree, Inbox, KeyRound, MessagesSquare, Search, Sparkles, Upload, Users } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
@@ -136,6 +136,18 @@ export default function Home() {
               </LinkButton>
             )}
           </Card>
+
+          <Link to="/ask" className="block">
+            <Card className="flex items-start gap-3 p-5 transition-colors hover:border-brand-500">
+              <div className="grid size-11 place-items-center rounded-2xl bg-brand-50 text-brand-600">
+                <MessagesSquare className="size-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-ink">اسأل خزانتك</h3>
+                <p className="mt-0.5 text-sm text-muted">«متى ينتهي جواز سفري؟» «لخّص لي عقد الإيجار». يجيبك Claude من وثائقك مع المصدر.</p>
+              </div>
+            </Card>
+          </Link>
 
           {(queue.running.length > 0 || queue.pending > 0) && (
             <Card className="p-5">
