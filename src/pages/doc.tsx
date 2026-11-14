@@ -203,9 +203,11 @@ export default function DocPage() {
   ].filter(Boolean) as string[]
 
   const del = async () => {
-    await api.deleteDocs([doc.id])
+    const r = await api.deleteDocs([doc.id])
     await refresh()
-    toast('نُقلت إلى سلة المحذوفات', {
+    // its share links were taken back with it: their copies leave Drive now if Google is connected
+    if (r?.links) void import('@/lib/shares').then(({ shares }) => shares.sweep(true))
+    toast(r?.links ? 'نُقلت إلى سلة المحذوفات، وسُحبت روابط مشاركتها' : 'نُقلت إلى سلة المحذوفات', {
       action: {
         label: 'تراجع',
         onClick: async () => {

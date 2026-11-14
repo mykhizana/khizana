@@ -186,7 +186,18 @@ export default function RelationsPage() {
             <Skeleton className="aspect-square w-full" />
           ) : !nodes.length ? (
             <div className="grid aspect-square place-items-center p-8 text-center text-sm leading-relaxed text-muted">
-              لا أشخاص ولا جهات بعد: تظهر هنا حين يقرأ Claude وثائقك ويتعرّف على من فيها.
+              {center ? (
+                <span>
+                  لا صلات تظهر لهذا الاسم بهذه المرشحات: قد ترد صلاته في وثائق الخزنة المقفلة، أو في نوع أخفيته أعلاه.{' '}
+                  <button type="button" className="text-brand-700 underline dark:text-brand-200" onClick={() => setParams({})}>
+                    اعرض الخريطة كلها
+                  </button>
+                </span>
+              ) : kinds.length < KINDS.length ? (
+                'لا شيء بهذه المرشحات: أظهر الأنواع الأخرى أعلاه.'
+              ) : (
+                'لا أشخاص ولا جهات بعد: تظهر هنا حين يقرأ Claude وثائقك ويتعرّف على من فيها.'
+              )}
             </div>
           ) : (
             <>

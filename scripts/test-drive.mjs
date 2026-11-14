@@ -383,28 +383,41 @@ ok('…then the gap is stepped over and it goes in', !(await A.engine.meta()).he
   await revokeShare(client, db, { id: p1.id, drive_file: p1.file })
   ok('share: taken back → its copy is deleted from Drive and the link is marked', !fake.files.has(p1.file) && (await S.call('kh_shares_list', {})).find((x) => x.id === p1.id)?.revoked === true)
 
-  // the tidying, on any device
-  const p3 = await publishShare(client, db, { pdf: pdfA4, name: 'ثالث', days: 7, collection_id: dz.id })
+  // the tidying, on any device of the archive
+  const here = { device: 'dS', archive: 'arc-1' }
+  const at = (ms) => ({ ...here, now: Date.now() + ms })
+  const p3 = await publishShare(client, db, { pdf: pdfA4, name: 'ثالث', days: 7, collection_id: dz.id, device: 'dS', archive: 'arc-1' })
+  ok('share: the copy knows its device and its archive', fake.files.get(p3.file).meta.appProperties.dev === 'dS' && fake.files.get(p3.file).meta.appProperties.arc === 'arc-1')
   await S.call('kh_share_revoke', { id: p3.id }) // taken back on a device that could not reach Drive
-  const sw1 = await sweepShares(client, db)
+  const sw1 = await sweepShares(client, db, here)
   ok('sweep: a link taken back elsewhere loses its copy', !fake.files.has(p3.file) && sw1.removed === 1 && fake.files.has(p2.file))
   const p4 = await publishShare(client, db, { pdf: pdfA4, name: 'رابع', days: 7, collection_id: dz.id })
-  const sw2 = await sweepShares(client, db, Date.now() + 8 * 864e5)
+  const sw2 = await sweepShares(client, db, at(8 * 864e5))
   ok('sweep: a link past its date loses its copy and is closed (the 30-day one stays)', !fake.files.has(p4.file) && fake.files.has(p2.file) && sw2.closed >= 1 && (await S.call('kh_shares_list', {})).find((x) => x.id === p4.id)?.revoked === true)
   const p5 = await publishShare(client, db, { pdf: pdfA4, name: 'خامس', days: 30, collection_id: dz.id })
   fake.files.delete(p5.file) // deleted by hand in Drive
-  await sweepShares(client, db, Date.now() + 2 * 3600_000)
-  ok('sweep: a copy deleted by hand in Drive → its link is marked as taken back', (await S.call('kh_shares_list', {})).find((x) => x.id === p5.id)?.revoked === true)
-  // the dossier is deleted (its rows go): its copy is removed after a day of grace, never at once
+  await sweepShares(client, db, at(2 * 3600_000))
+  ok('sweep: a copy deleted by hand in Drive (Drive confirms it is gone) → its link is marked as taken back', (await S.call('kh_shares_list', {})).find((x) => x.id === p5.id)?.revoked === true)
+  // the dossier is deleted: its link's tombstone says so, the copy goes at once
   const dz2 = await S.call('kh_dossier_save', { name: 'ملف سيُحذف' })
   const p6 = await publishShare(client, db, { pdf: pdfA4, name: 'سادس', days: 30, collection_id: dz2.id })
   await S.call('kh_dossier_delete', { id: dz2.id, force: true })
-  await sweepShares(client, db)
-  const kept = fake.files.has(p6.file)
-  await sweepShares(client, db, Date.now() + 2 * 864e5)
-  ok('sweep: a link whose dossier was deleted loses its copy, after a day (another device may not have it yet)', kept && !fake.files.has(p6.file) && fake.files.has(p2.file))
-  const st = await S.call('kh_shares_state', { ids: [p2.id, p1.id, p6.id] })
-  ok('sweep: the state of links, the closed vault included', st[p2.id] === 'live' && st[p1.id] === 'revoked' && st[p6.id] === 'gone', JSON.stringify(st))
+  await sweepShares(client, db, here)
+  ok('sweep: a link whose dossier was deleted loses its copy', !fake.files.has(p6.file) && fake.files.has(p2.file))
+  const st = await S.call('kh_shares_state', { ids: [p2.id, p1.id, p6.id, '00000000-0000-4000-8000-00000000f00d'] })
+  ok('sweep: the state of links: live, revoked, deleted (tombstone), unknown (never seen here)', st[p2.id] === 'live' && st[p1.id] === 'revoked' && st[p6.id] === 'deleted' && st['00000000-0000-4000-8000-00000000f00d'] === 'unknown', JSON.stringify(st))
+  // copies this device knows nothing about: another device's are kept until their end date
+  const sharesFolder = (await client.list(`appProperties has { key='kh' and value='shares' } and trashed = false`))[0].id
+  const stray = async (props) => (await client.create({ name: 'x.pdf', parents: [sharesFolder], mimeType: 'application/pdf', appProperties: { kh: 'share', sid: crypto.randomUUID(), exp: new Date(Date.now() + 30 * 864e5).toISOString(), ...props } }, pdfA4)).id
+  const theirs = await stray({ dev: 'dPhone', arc: 'arc-1' })
+  const mineLost = await stray({ dev: 'dS', arc: 'arc-1' })
+  const otherArchive = await stray({ dev: 'dX', arc: 'arc-2', exp: new Date(Date.now() - 864e5).toISOString() })
+  await sweepShares(client, db, at(2 * 864e5))
+  ok('sweep: a link made on another device and not arrived yet is never cut', fake.files.has(theirs))
+  ok('sweep: a copy this device made but never noted (a failed publish) goes after a day', !fake.files.has(mineLost))
+  ok('sweep: the copies of another archive are not touched', fake.files.has(otherArchive))
+  await sweepShares(client, db, at(31 * 864e5))
+  ok('sweep: … the other device’s copy goes at its own end date', !fake.files.has(theirs))
 }
 
 // ------------------------------------------------------------ two devices creating an archive at the same moment

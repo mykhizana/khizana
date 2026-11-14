@@ -460,7 +460,7 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   const zbad = unzipSync(docx([{ segs: [{ t: 'Titre' + String.fromCharCode(12) + 'suite & <fin>' }], rtl: false }]))
   ok('word: characters XML forbids are dropped, the rest escaped', strFromU8(zbad['word/document.xml']).includes('Titresuite &amp; &lt;fin&gt;'))
   ok('word: a real .docx (content types, document, styles)', !!z['[Content_Types].xml'] && !!z['word/styles.xml'] && !!z['_rels/.rels'] && xml.startsWith('<?xml'))
-  ok('word: Arabic paragraphs right-to-left, titles in italics (Arabic italics too)', (xml.match(/<w:bidi\/>/g) ?? []).length >= 3 && /<w:rPr><w:rtl\/><w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">القانون الإداري/.test(xml) && /<w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">Philosophy &amp; Technology/.test(xml))
+  ok('word: Arabic paragraphs right-to-left, titles in italics (Arabic italics too)', (xml.match(/<w:bidi\/>/g) ?? []).length >= 3 && /<w:rPr><w:i\/><w:iCs\/><w:rtl\/><\/w:rPr><w:t xml:space="preserve">القانون الإداري/.test(xml) && /<w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">Philosophy &amp; Technology/.test(xml))
 }
 
 // ------------------------------------------------------------ the map of relations: its layout
@@ -508,6 +508,20 @@ ok('arabic counting', [1, 2, 5, 12].map(docsAr).join('|') === 'وثيقة واح
   ok('legal index: «مكرر», المادة, French and Spanish articles', names.includes('الفصل 133 مكرر') && names.includes('المادة 2') && names.includes('Article 1') && names.includes('Article 27') && names.includes('Artículo 5'))
   ok('legal index: «Article suivant» is not an article', !names.some((x) => /suivant/.test(x)) && a.length === 8, String(a.length))
   ok('legal index: the start of each article text (from the next line when the heading stands alone)', a[0].excerpt.startsWith('نظام الحكم بالمغرب') && a.find((x) => articleName(x) === 'الفصل 27').excerpt.startsWith('للمواطنات'))
+}
+
+// ------------------------------------------------------------ the review's findings (citations)
+{
+  const { legalRank, citedBy, plain } = await import('../src/lib/bib.ts')
+  const L = (legal_type, purpose = '') => ({ kind: 'legal', lang: 'ar', authors: [], title: '', legal_type, purpose })
+  ok('legal rank: a decree applying an organic law is a decree', legalRank(L('مرسوم', 'تطبيقا للقانون التنظيمي 113.14')) === 4)
+  ok('legal rank: a circular about an organic law is a circular', legalRank(L('دورية', 'حول تطبيق القانون التنظيمي')) === 6)
+  ok('legal rank: a minister order applying a decree is an order', legalRank(L('قرار لوزير الداخلية', 'بتطبيق المرسوم')) === 5)
+  ok('legal rank: an arrêté applying a décret is an order', legalRank({ ...L('Arrêté', "pris pour l'application du décret"), lang: 'latin' }) === 5)
+  ok('legal rank: dahirs take the rank of what they promulgate', legalRank(L('ظهير شريف', 'بتنفيذ نص الدستور')) === 0 && legalRank(L('ظهير شريف', 'بتنفيذ القانون التنظيمي رقم 113.14')) === 1 && legalRank(L('ظهير شريف', 'بتنفيذ القانون رقم 31.13')) === 2)
+  ok('legal rank: an organic law named as such, a law, a decree-law', legalRank(L('قانون تنظيمي')) === 1 && legalRank(L('قانون')) === 2 && legalRank(L('مرسوم بقانون')) === 3 && legalRank({ ...L('Loi'), lang: 'latin' }) === 2)
+  const sd = { kind: 'book', lang: 'latin', authors: [{ last: 'Dupont', first: 'Jean' }], title: 'Droit', publisher: 'PUF', place: 'Paris', year: 's.d.' }
+  ok('citation: «Cité par» on a reference ending with «s.d.» takes no second full stop', plain(citedBy(sd)).endsWith('Paris, s.d.') && !plain(citedBy(sd)).endsWith('..'), plain(citedBy(sd)))
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

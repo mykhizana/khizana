@@ -39,6 +39,17 @@ import { useVault, vault } from '@/ui/vault'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
+/** the database's refusals, said in Arabic */
+function arabic(e: unknown): string {
+  const m = String((e as Error)?.message ?? e)
+  if (/open the vault first/.test(m)) return 'افتح الخزنة أولاً: لهذا الملف رابط مفتوح فيه وثائق من الخزنة، وهو مخفي وهي مقفلة.'
+  if (/take it back first/.test(m)) return 'اسحب روابط هذا الملف المفتوحة أولاً.'
+  if (/vault is closed/.test(m)) return 'الخزنة مقفلة: افتحها لتعديل هذه القائمة.'
+  if (/dossier not found/.test(m)) return 'هذا الملف لم يعد موجوداً.'
+  if (/document not found/.test(m)) return 'هذه الوثيقة لم تعد موجودة.'
+  return m
+}
+
 /** the status shown: a paper whose validity ended since the check is expired now */
 function statusOf(r: Requirement): ReqStatus {
   if (r.document_id && r.gone) return 'missing'
@@ -85,7 +96,7 @@ function Checklist({ d, refresh }: { d: Dossier; refresh: () => Promise<unknown>
       const n = p.requirements.filter((r) => r.status === 'missing' || r.status === 'expired').length
       toast.success(n ? `انتهى الفحص: ${n} من ${p.requirements.length} تنقص أو انتهت صلاحيتها` : `انتهى الفحص: كل الوثائق الـ${p.requirements.length} موجودة`)
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(arabic(e))
     } finally {
       setBusy(false)
       setStatus(null)
@@ -115,7 +126,7 @@ function Checklist({ d, refresh }: { d: Dossier; refresh: () => Promise<unknown>
       await refresh()
       toast.success('رُتّبت وثائق الملف على ترتيب القائمة')
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(arabic(e))
     } finally {
       setAdding(false)
     }
@@ -287,7 +298,7 @@ function Items({ d, refresh }: { d: Dossier; refresh: () => Promise<unknown> }) 
       )
       await refresh()
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(arabic(e))
     }
   }
   const move = (i: number, by: number) => {
@@ -428,7 +439,7 @@ export default function DossierPage() {
       toast.success('حُذف الملف')
       nav('/dossiers')
     } catch (e) {
-      toast.error((e as Error).message)
+      toast.error(arabic(e))
     } finally {
       setDeleting(false)
     }

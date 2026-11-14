@@ -1280,3 +1280,16 @@ language sql set search_path = public, extensions as $$
   where owner_id = auth.uid() and deleted_at is null and state not in ('ready', 'review')
     and (claimed_at is null or claimed_at < now() - interval '10 minutes')
 $$;
+
+-- the state of share links for the tidying of their copies in Drive. Each device has its own database:
+-- a link it does not have may have been made on another device and not have arrived yet ('unknown',
+-- its copy is kept until its end date); it was deleted only when a tombstone says so ('deleted').
+create or replace function public.kh_shares_state(p jsonb) returns jsonb
+language sql stable security definer set search_path = public, extensions as $$
+  select coalesce(jsonb_object_agg(sid, coalesce(
+      (select case when s.revoked then 'revoked' when s.expires_at <= now() then 'expired' else 'live' end
+       from public.kh_share_links s where s.id = public.kh_uuid(sid) and s.owner_id = auth.uid()),
+      case when exists (select 1 from public.kh_sync_tomb t where t.tbl = 'kh_share_links' and t.pk = jsonb_build_object('id', sid))
+           then 'deleted' else 'unknown' end)), '{}'::jsonb)
+  from jsonb_array_elements_text(public.kh_arr(p -> 'ids')) as k(sid)
+$$;

@@ -9,6 +9,8 @@ import { toast } from 'sonner'
 import { api } from '@/db/api'
 import { DriveError } from '@/drive/api'
 import { auth } from '@/drive/auth'
+import { driveSync } from '@/drive/sync'
+import { MODE } from '@/lib/config'
 import { SHARE_DAYS } from '@/drive/share'
 import { daysAr, docTitle, fmtDate, pagesAr, relTime, safeFileName } from '@/lib/format'
 import { typeIcon, typeLabel } from '@/lib/labels'
@@ -76,6 +78,7 @@ export function ShareLinks({ links, onChange, showName }: { links: ShareLink[]; 
               <div className="text-xs text-muted">
                 يفتح حتى <span className="num">{fmtDate(l.expires_at.slice(0, 10))}</span> ({daysLeft(l.expires_at) <= 1 ? 'آخر يوم' : `بقي ${daysAr(daysLeft(l.expires_at))}`})
                 {l.watermark && <> · بعلامة مائية</>}
+                {l.vault && <> · فيه وثائق من الخزنة</>}
               </div>
             </div>
             <IconButton icon={Copy} label="انسخ الرابط" size="sm" onClick={() => void copy(l.url)} />
@@ -167,12 +170,13 @@ export function SharePanel({
     if (marked && !to.trim()) return toast.error('اكتب لمن تُقدَّم هذه النسخة (يظهر في العلامة المائية)')
     if (!entries.length) return toast.error('لا وثيقة في الملف بعد')
     if (pages && pages > 150 && !confirm(`سيكون الملف ${pagesAr(pages)}: يأخذ تجهيزه بعض الوقت ويكبر حجمه. أتتابع؟`)) return
-    // Google's window must open from the click itself, before the long work
-    if (kind === 'link' && !(await shares.ready())) {
+    // Google's window must open from the click itself, before the long work: a link needs Google, and
+    // on a device in the archive a page kept only in Drive must be brought (otherwise the PDF would miss it)
+    if (!(await shares.ready()) && (kind === 'link' || (MODE === 'local' && driveSync.getSnapshot().linked))) {
       try {
         await auth.connect()
       } catch (e) {
-        return toast.error((e as Error).message)
+        if (kind === 'link') return toast.error((e as Error).message)
       }
     }
     setBusy(kind)
@@ -190,7 +194,7 @@ export function SharePanel({
         else saveBlob(pdf.blob, `${name}.pdf`)
       } else {
         setProgress({ text: 'رفع الملف إلى Google Drive', ratio: 1 })
-        const r = await shares.publish({ pdf: pdf.blob, name, days, ...target, label: to.trim() || null, watermark: marked ? watermark : null })
+        const r = await shares.publish({ pdf: pdf.blob, name, days, ...target, documents: entries.map((x) => x.id), label: to.trim() || null, watermark: marked ? watermark : null })
         setMade(r.url)
         try {
           await navigator.clipboard.writeText(r.url)
@@ -231,6 +235,7 @@ export function SharePanel({
           </Button>
         )}
       </div>
+      {MODE === 'local' && (
       <div className="rounded-xl border border-line p-3">
         <div className="flex flex-wrap items-end gap-2">
           <Field label="رابط مشاركة يفتح لمدة" className="w-40">
@@ -247,9 +252,10 @@ export function SharePanel({
           </Button>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-muted">
-          يوضع الملف في Google Drive داخل مجلد «خزانة — ملفات مشتركة»، ويفتحه من معه الرابط فقط (لا يظهر في أي بحث). عند انتهاء المدة أو حين تسحبه، تُحذف النسخة فيتوقف الرابط.
+          يوضع الملف في Google Drive داخل مجلد «خزانة — ملفات مشتركة»، ويفتحه من معه الرابط فقط (لا يظهر في أي بحث). حين تسحبه تُحذف النسخة فيتوقف في الحال. وعند انتهاء مدته تحذفها خزانة إن كانت مفتوحة على أحد أجهزتك، وإلا فعند أول فتح لها بعد ذلك: Google Drive لا يوقف الرابط وحده.
         </p>
       </div>
+      )}
       {progress && (
         <div>
           <Progress value={progress.ratio} />

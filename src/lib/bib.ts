@@ -245,7 +245,10 @@ export function citedBy(b: Bib, page?: string | null): Seg[] {
   const full = fullRef(b)
   if (full.length && full[full.length - 1].t === '.') full.pop()
   const where = loc(b, page)
-  return [{ t: isAr(b) ? 'نقلاً عن ' : 'Cité par ' }, ...full, { t: `${where ? (isAr(b) ? `، ${where}` : `, ${where}`) : ''}.` }]
+  const tail = where ? (isAr(b) ? `، ${where}` : `, ${where}`) : ''
+  // (a reference already ending with a full stop — «s.d.» — takes no second one)
+  const ends = !tail && /[.!?…]$/.test(full[full.length - 1]?.t ?? '')
+  return [{ t: isAr(b) ? 'نقلاً عن ' : 'Cité par ' }, ...full, { t: `${tail}${ends ? '' : '.'}` }]
 }
 
 export const plain = (segs: Seg[]) => segs.map((s) => s.t).join('')
@@ -261,14 +264,25 @@ export function missing(b: Bib): string[] {
 
 /** rank of a legal text, from the highest norm down (the rules order them so) */
 export function legalRank(b: Bib): number {
-  const s = `${b.legal_type ?? ''} ${b.purpose ?? ''} ${b.title ?? ''}`
-  if (/الدستور|Constitution/i.test(s)) return 0
+  // the kind of text decides; what it applies or carries out does not («مرسوم تطبيقاً للقانون التنظيمي» is a
+  // decree). Only a promulgating dahir takes the rank of the text it carries out (constitution, organic
+  // law, law). Without a kind, the heading is read instead.
+  const type = (b.legal_type ?? '').trim()
+  const rest = `${b.purpose ?? ''} ${b.title ?? ''}`
+  const dahir = /ظهير|dahir/i.test(type)
+  const s = type && !dahir ? type : rest
+  if (dahir || !type) {
+    if (/^\s*(?:بتنفيذ|بإصدار)?\s*(?:نص\s+)?الدستور|constitution/i.test(s)) return 0
+    if (/(?:بتنفيذ|بإصدار)\s+القانون\s+التنظيمي|loi organique/i.test(s)) return 1
+    if (dahir) return 2
+  }
+  if (/دستور|constitution/i.test(s)) return 0
   if (/تنظيمي|organique/i.test(s)) return 1
-  if (/مرسوم بقانون|décret-loi/i.test(s)) return 3
+  if (/مرسوم\s+بقانون|décret-loi/i.test(s)) return 3
   if (/مرسوم|décret/i.test(s)) return 4
   if (/قرار|arrêté/i.test(s)) return 5
   if (/دورية|منشور|circulaire/i.test(s)) return 6
-  if (/ظهير|قانون|dahir|\bloi\b/i.test(s)) return 2
+  if (/قانون|\bloi\b/i.test(s)) return 2
   return 7
 }
 

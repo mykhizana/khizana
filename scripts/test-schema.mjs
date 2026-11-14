@@ -417,6 +417,38 @@ ok('radar list: a closed vault hides its deadlines', !(await call('kh_deadlines_
   ok('dossier: deleted, with its links', !(await call('kh_dossiers_list')).some((x) => x.id === dz.id) && !(await call('kh_shares_list')).some((x) => x.collection_id === dz.id))
   claims = '{"aal":"aal1"}'
 }
+// the independent review's findings: links to vault pages, order with the vault closed, the trash
+{
+  claims = '{"aal":"aal2"}'
+  const vdoc = await call('kh_doc_create', { file_name: 'tie.jpg', page_count: 1, pages: [{ page_no: 1, text: 'tarjeta de identidad de extranjero' }] })
+  await call('kh_doc_update', { id: vdoc.id, fields: { sensitivity: 'vault' } })
+  const dv = await call('kh_dossier_save', { name: 'ملف ببطاقة الإقامة' })
+  await call('kh_dossier_set_items', { id: dv.id, items: [{ document_id: vdoc.id, requirement: 'بطاقة الإقامة' }, { document_id: d1.id }, { document_id: d2.id }] })
+  const link = await call('kh_share_add', { collection_id: dv.id, documents: [vdoc.id, d1.id, d2.id], drive_file: 'fv', url: 'uv' })
+  ok('vault link: with the vault open the link shows, marked as holding vault pages', (await call('kh_dossier_get', { id: dv.id })).shares.some((x) => x.id === link.id && x.vault === true))
+  await call('kh_dossier_save', { id: dv.id, plan: { procedure: 'TIE', requirements: [{ label: 'بطاقة الإقامة', status: 'found', document_id: vdoc.id, note: 'رقم Y1234567 صالحة حتى 2030' }] } })
+  claims = '{"aal":"aal1"}'
+  const closed = await call('kh_dossier_get', { id: dv.id })
+  ok('vault link: closed vault → a link whose PDF holds vault pages is hidden everywhere', !closed.shares.length && !(await call('kh_shares_list')).some((x) => x.id === link.id))
+  ok('vault link: … the tidying still knows it', (await call('kh_shares_state', { ids: [link.id] }))[link.id] === 'live')
+  await fails('vault link: the dossier is not deleted under a link the closed vault hides', () => call('kh_dossier_delete', { id: dv.id }), /open the vault first/)
+  await call('kh_dossier_set_items', { id: dv.id, items: [{ document_id: d2.id }, { document_id: d1.id }] })
+  claims = '{"aal":"aal2"}'
+  ok('order: reordering with the vault closed keeps the vault paper in its place', (await call('kh_dossier_get', { id: dv.id })).items.map((x) => x.document_id).join() === [vdoc.id, d2.id, d1.id].join())
+  await call('kh_dossier_add', { id: dv.id, document_id: d3.id })
+  ok('order: a paper added goes after all, the vault ones included', (await call('kh_dossier_get', { id: dv.id })).items.at(-1)?.document_id === d3.id)
+  const trashed = await call('kh_doc_delete', { ids: [vdoc.id] })
+  ok('trash: a paper thrown away takes back the links whose PDF holds it', trashed.links === 1 && (await call('kh_shares_state', { ids: [link.id] }))[link.id] === 'revoked')
+  claims = '{"aal":"aal1"}'
+  const r0 = (await call('kh_dossier_get', { id: dv.id })).plan.requirements[0]
+  ok('trash: its checklist line stays hidden while the vault is closed (no note, no id)', r0.hidden === true && !r0.note && !r0.document_id && r0.label === 'بطاقة الإقامة')
+  await fails('trash: … and the checklist still cannot be replaced with the vault closed', () => call('kh_dossier_save', { id: dv.id, plan: { requirements: [] } }), /vault is closed/)
+  ok('links: a link this database does not have was deleted (one database for every device in the cloud)', (await call('kh_shares_state', { ids: ['00000000-0000-4000-8000-00000000beef'] }))['00000000-0000-4000-8000-00000000beef'] === 'deleted')
+  claims = '{"aal":"aal2"}'
+  await call('kh_doc_restore', { id: vdoc.id })
+  await call('kh_dossier_delete', { id: dv.id, force: true })
+  claims = '{"aal":"aal1"}'
+}
 // «مراجعي»: the bibliographic record of a research document
 {
   const lec = await call('kh_doc_create', { file_name: 'droit-admin.pdf', page_count: 1, pages: [{ page_no: 1, text: 'القانون الإداري المغربي' }] })

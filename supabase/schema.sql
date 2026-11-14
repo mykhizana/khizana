@@ -501,6 +501,10 @@ create table if not exists public.kh_share_links (
 alter table public.kh_share_links add column if not exists drive_file text;
 alter table public.kh_share_links add column if not exists permission_id text;
 alter table public.kh_share_links add column if not exists url text;
+-- the documents put in its PDF, and whether one of them is in the vault (then the link itself is
+-- hidden while the vault is closed: opening it would show vault pages)
+alter table public.kh_share_links add column if not exists documents uuid[];
+alter table public.kh_share_links add column if not exists vault boolean not null default false;
 
 -- ------------------------------------------------------------------ triggers
 -- (kh.applying: on a device, rows arriving from another device keep their own time and search vectors)
@@ -617,7 +621,8 @@ begin
       when 'kh_audit' then '(document_id is null or public.kh_doc_visible(document_id))'
       when 'kh_ai_usage' then '(document_id is null or public.kh_doc_visible(document_id))'
       when 'kh_ai_jobs' then '(document_id is null or public.kh_doc_visible(document_id))'
-      when 'kh_share_links' then '(document_id is null or public.kh_doc_visible(document_id))'
+      when 'kh_share_links' then $v$(document_id is null or public.kh_doc_visible(document_id))
+        and (not vault or coalesce(auth.jwt() ->> 'aal', '') = 'aal2')$v$
       else 'true' end;
     if t = 'kh_ai_usage' then
       -- usage is written by the AI function only (and by the device itself, as database owner);
@@ -1028,12 +1033,16 @@ end $$;
 
 create or replace function public.kh_doc_delete(p jsonb) returns jsonb
 language plpgsql set search_path = public, extensions as $$
-declare ids uuid[] := public.kh_juuid(p -> 'ids');
+declare ids uuid[] := public.kh_juuid(p -> 'ids'); n int := 0;
 begin
   if public.kh_uuid(p ->> 'id') is not null then ids := ids || public.kh_uuid(p ->> 'id'); end if;
   update public.kh_documents set deleted_at = now() where id = any(ids) and deleted_at is null;
   insert into public.kh_audit (action, document_id) select 'delete', x from unnest(ids) x;
-  return jsonb_build_object('ok', true, 'count', coalesce(array_length(ids, 1), 0));
+  -- a document thrown away takes its share links with it (their copies leave Drive at the next tidying)
+  update public.kh_share_links set revoked = true
+  where owner_id = auth.uid() and not revoked and (document_id = any (ids) or documents && ids);
+  get diagnostics n = row_count;
+  return jsonb_build_object('ok', true, 'count', coalesce(array_length(ids, 1), 0), 'links', n);
 end $$;
 
 create or replace function public.kh_doc_restore(p jsonb) returns jsonb
@@ -2048,8 +2057,9 @@ end $$;
 -- ---------------- ready dossiers («الملفات الجاهزة»): the papers one procedure asks for, in order, each
 -- answering a requirement; Claude's checklist of the procedure (found / expired / missing) lives in
 -- the dossier's «query»; the dossier is exported as one PDF and shared by a link that can be taken back.
--- A closed vault keeps its documents in a dossier without showing them.
+-- A closed vault keeps its documents in a dossier without showing them, nor the links to them.
 
+-- the vault seen past its closed door (each helper only answers about the caller's own rows):
 -- a document of the caller that exists but is hidden by the closed vault
 create or replace function public.kh_doc_hidden(did uuid) returns boolean
 language sql stable security definer set search_path = public, extensions as $$
@@ -2057,10 +2067,42 @@ language sql stable security definer set search_path = public, extensions as $$
                  and d.sensitivity = 'vault' and coalesce(auth.jwt() ->> 'aal', '') <> 'aal2')
 $$;
 
+-- a document of the caller in the vault, in the trash or not
+create or replace function public.kh_doc_vaulted(did uuid) returns boolean
+language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from public.kh_documents d where d.id = did and d.owner_id = auth.uid() and d.sensitivity = 'vault')
+$$;
+
+-- this session has not opened the vault
+create or replace function public.kh_vault_closed() returns boolean
+language sql stable as $$
+  select coalesce(auth.jwt() ->> 'aal', '') <> 'aal2'
+$$;
+
 create or replace function public.kh_dossier_hidden(cid uuid) returns int
 language sql stable security definer set search_path = public, extensions as $$
   select count(*)::int from public.kh_collection_docs x
   where x.collection_id = cid and x.owner_id = auth.uid() and public.kh_doc_hidden(x.document_id)
+$$;
+
+-- the last place in a dossier, its vault documents included
+create or replace function public.kh_dossier_maxpos(cid uuid) returns int
+language sql stable security definer set search_path = public, extensions as $$
+  select coalesce(max(x.position), 0)::int from public.kh_collection_docs x where x.collection_id = cid and x.owner_id = auth.uid()
+$$;
+
+-- the links of a dossier still open, those hidden by the closed vault included
+create or replace function public.kh_live_links(cid uuid) returns int
+language sql stable security definer set search_path = public, extensions as $$
+  select count(*)::int from public.kh_share_links s where s.collection_id = cid and s.owner_id = auth.uid() and not s.revoked and s.expires_at > now()
+$$;
+
+-- whether a link shows vault papers: its document, the documents of its PDF, or its dossier's
+create or replace function public.kh_share_is_vault(cid uuid, did uuid, ids uuid[]) returns boolean
+language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from public.kh_documents d where d.owner_id = auth.uid() and d.sensitivity = 'vault'
+    and (d.id = did or d.id = any (coalesce(ids, '{}'::uuid[]))
+         or d.id in (select x.document_id from public.kh_collection_docs x where x.collection_id = cid and x.owner_id = auth.uid())))
 $$;
 
 -- with p.document_id: whether that document is already in each dossier
@@ -2087,16 +2129,18 @@ language sql stable set search_path = public, extensions as $$
        from public.kh_collection_docs x join public.kh_documents d on d.id = x.document_id and d.deleted_at is null
        where x.collection_id = c.id), '[]'::jsonb),
     'hidden', public.kh_dossier_hidden(c.id),
-    -- the checklist: a requirement answered by a document of the closed vault shows only its label
+    -- the checklist: a line answered by a vault paper (even one since thrown away) shows only its label
+    -- while the vault is closed
     'plan', case when jsonb_typeof(c.query) = 'object' then c.query || jsonb_build_object('requirements', coalesce((
-        select jsonb_agg(case when public.kh_doc_hidden(public.kh_uuid(r ->> 'document_id'))
+        select jsonb_agg(case when public.kh_vault_closed() and (r -> 'vault' = 'true'::jsonb or public.kh_doc_vaulted(public.kh_uuid(r ->> 'document_id')))
             then jsonb_build_object('label', r ->> 'label', 'status', r ->> 'status', 'hidden', true)
-            else r || jsonb_build_object('title', coalesce(d.title_ar, d.title, d.file_name), 'expiry_date', d.expiry_date, 'gone', r ->> 'document_id' is not null and d.id is null) end
+            else (r - 'vault') || jsonb_build_object('title', coalesce(d.title_ar, d.title, d.file_name), 'expiry_date', d.expiry_date,
+                                                     'gone', r ->> 'document_id' is not null and d.id is null) end
           order by o)
         from jsonb_array_elements(public.kh_arr(c.query -> 'requirements')) with ordinality t(r, o)
         left join public.kh_documents d on d.id = public.kh_uuid(r ->> 'document_id') and d.deleted_at is null), '[]'::jsonb)) end,
     'shares', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'url', s.url, 'label', s.label, 'watermark', s.watermark, 'expires_at', s.expires_at,
-         'revoked', s.revoked, 'expired', s.expires_at <= now(), 'created_at', s.created_at, 'drive_file', s.drive_file) order by s.created_at desc)
+         'revoked', s.revoked, 'expired', s.expires_at <= now(), 'created_at', s.created_at, 'drive_file', s.drive_file, 'vault', s.vault) order by s.created_at desc)
        from public.kh_share_links s where s.collection_id = c.id), '[]'::jsonb))
   from public.kh_collections c where c.id = public.kh_uuid(p ->> 'id') and c.owner_id = auth.uid() and c.kind = 'dossier'
 $$;
@@ -2107,14 +2151,24 @@ language plpgsql set search_path = public, extensions as $$
 declare cid uuid := public.kh_uuid(p ->> 'id'); n text := nullif(btrim(coalesce(p ->> 'name', '')), '');
   plan jsonb := case when jsonb_typeof(p -> 'plan') = 'object' then p -> 'plan' end;
 begin
+  -- each line remembers whether its paper is in the vault, so that it stays hidden while the vault is
+  -- closed, even once that paper is thrown away
+  if plan is not null then
+    plan := plan || jsonb_build_object('requirements', coalesce((
+      select jsonb_agg((r - 'vault' - 'hidden' - 'title' - 'expiry_date' - 'gone')
+                       || jsonb_build_object('vault', public.kh_doc_vaulted(public.kh_uuid(r ->> 'document_id'))) order by o)
+      from jsonb_array_elements(public.kh_arr(plan -> 'requirements')) with ordinality t(r, o)
+      where jsonb_typeof(r) = 'object'), '[]'::jsonb));
+  end if;
   if cid is null then
     if n is null then raise exception 'a dossier needs a name'; end if;
     insert into public.kh_collections (id, name, kind, notes, query)
     values (coalesce(public.kh_uuid(p ->> 'new_id'), gen_random_uuid()), left(n, 200), 'dossier', nullif(btrim(coalesce(p ->> 'notes', '')), ''), plan)
     returning id into cid;
   else
-    if p ? 'plan' and exists (select 1 from public.kh_collections c, jsonb_array_elements(public.kh_arr(c.query -> 'requirements')) r
-                              where c.id = cid and c.owner_id = auth.uid() and public.kh_doc_hidden(public.kh_uuid(r ->> 'document_id'))) then
+    if p ? 'plan' and public.kh_vault_closed() and exists (select 1 from public.kh_collections c, jsonb_array_elements(public.kh_arr(c.query -> 'requirements')) r
+        where c.id = cid and c.owner_id = auth.uid()
+          and (r -> 'vault' = 'true'::jsonb or public.kh_doc_vaulted(public.kh_uuid(r ->> 'document_id')))) then
       raise exception 'the vault is closed: open it to change this checklist';
     end if;
     update public.kh_collections set name = coalesce(left(n, 200), name),
@@ -2126,35 +2180,44 @@ begin
   return jsonb_build_object('id', cid);
 end $$;
 
--- a dossier with a live link is not deleted unless p.force (the app takes the links back first)
+-- a dossier with a live link is not deleted unless p.force (the app takes the links back first); a link
+-- hidden by the closed vault asks for the vault to be opened
 create or replace function public.kh_dossier_delete(p jsonb) returns jsonb
 language plpgsql set search_path = public, extensions as $$
-declare cid uuid := public.kh_uuid(p ->> 'id');
+declare cid uuid := public.kh_uuid(p ->> 'id'); seen int; total int;
 begin
-  if not coalesce((p ->> 'force')::boolean, false) and exists (select 1 from public.kh_share_links s
-      where s.collection_id = cid and s.owner_id = auth.uid() and not s.revoked and s.expires_at > now()) then
-    raise exception 'this dossier has a live link: take it back first';
+  if not coalesce((p ->> 'force')::boolean, false) then
+    total := public.kh_live_links(cid);
+    if total > 0 then
+      select count(*) into seen from public.kh_share_links s
+      where s.collection_id = cid and s.owner_id = auth.uid() and not s.revoked and s.expires_at > now();
+      if seen < total then raise exception 'the vault is closed: this dossier has a live link to vault papers; open the vault first'; end if;
+      raise exception 'this dossier has a live link: take it back first';
+    end if;
   end if;
   delete from public.kh_collections where id = cid and owner_id = auth.uid() and kind = 'dossier';
   return jsonb_build_object('ok', true);
 end $$;
 
--- the dossier's documents in the given order. Only the rows the caller sees are replaced: the
--- documents of a closed vault stay in the dossier.
+-- the dossier's documents in the given order. Only the rows the caller sees are replaced, in the places
+-- they held: the documents of a closed vault stay where they were.
 create or replace function public.kh_dossier_set_items(p jsonb) returns jsonb
 language plpgsql set search_path = public, extensions as $$
-declare cid uuid := public.kh_uuid(p ->> 'id'); x jsonb; i int := 0; did uuid;
+declare cid uuid := public.kh_uuid(p ->> 'id'); x jsonb; i int := 0; did uuid; slots int[]; k int; top int;
 begin
   if not exists (select 1 from public.kh_collections where id = cid and owner_id = auth.uid() and kind = 'dossier') then
     raise exception 'dossier not found';
   end if;
+  select coalesce(array_agg(position order by position), '{}'::int[]) into slots from public.kh_collection_docs where collection_id = cid;
+  k := coalesce(array_length(slots, 1), 0);
+  top := public.kh_dossier_maxpos(cid);
   delete from public.kh_collection_docs where collection_id = cid;
   for x in select * from jsonb_array_elements(public.kh_arr(p -> 'items')) loop
     did := public.kh_uuid(x ->> 'document_id');
     continue when did is null or not exists (select 1 from public.kh_documents d where d.id = did and d.deleted_at is null);
     i := i + 1;
     insert into public.kh_collection_docs (collection_id, document_id, position, requirement)
-    values (cid, did, i, nullif(left(btrim(coalesce(x ->> 'requirement', '')), 300), ''))
+    values (cid, did, case when i <= k then slots[i] else top + i - k end, nullif(left(btrim(coalesce(x ->> 'requirement', '')), 300), ''))
     on conflict (collection_id, document_id) do update set position = excluded.position, requirement = excluded.requirement;
   end loop;
   return jsonb_build_object('ok', true, 'items', i);
@@ -2174,26 +2237,27 @@ begin
   end if;
   if not exists (select 1 from public.kh_documents d where d.id = did and d.deleted_at is null) then raise exception 'document not found'; end if;
   insert into public.kh_collection_docs (collection_id, document_id, position, requirement)
-  values (cid, did, coalesce((select max(x.position) from public.kh_collection_docs x where x.collection_id = cid), 0) + 1,
-          nullif(left(btrim(coalesce(p ->> 'requirement', '')), 300), ''))
+  values (cid, did, public.kh_dossier_maxpos(cid) + 1, nullif(left(btrim(coalesce(p ->> 'requirement', '')), 300), ''))
   on conflict (collection_id, document_id) do update set requirement = coalesce(excluded.requirement, public.kh_collection_docs.requirement);
   return jsonb_build_object('ok', true);
 end $$;
 
--- a link made by the app (the PDF is already in Drive and shared): at most a year
+-- a link made by the app (the PDF is already in Drive and shared): at most a year. p.documents: the
+-- documents put in its PDF (a vault one hides the link while the vault is closed)
 create or replace function public.kh_share_add(p jsonb) returns jsonb
 language plpgsql set search_path = public, extensions as $$
 declare sid uuid := coalesce(public.kh_uuid(p ->> 'id'), gen_random_uuid()); cid uuid := public.kh_uuid(p ->> 'collection_id');
-  did uuid := public.kh_uuid(p ->> 'document_id'); exp timestamptz;
+  did uuid := public.kh_uuid(p ->> 'document_id'); exp timestamptz; ids uuid[] := public.kh_juuid(p -> 'documents');
 begin
   if coalesce(p ->> 'drive_file', '') = '' or coalesce(p ->> 'url', '') = '' then raise exception 'a share needs its file and its link'; end if;
   if cid is null and did is null then raise exception 'a share is of a dossier or of a document'; end if;
   if cid is not null and not exists (select 1 from public.kh_collections where id = cid and owner_id = auth.uid()) then raise exception 'dossier not found'; end if;
   if did is not null and not exists (select 1 from public.kh_documents where id = did and deleted_at is null) then raise exception 'document not found'; end if;
   exp := least(coalesce((p ->> 'expires_at')::timestamptz, now() + interval '30 days'), now() + interval '366 days');
-  insert into public.kh_share_links (id, token, collection_id, document_id, label, watermark, expires_at, drive_file, permission_id, url)
+  insert into public.kh_share_links (id, token, collection_id, document_id, label, watermark, expires_at, drive_file, permission_id, url, documents, vault)
   values (sid, gen_random_uuid()::text, cid, did, nullif(left(btrim(coalesce(p ->> 'label', '')), 200), ''),
-          nullif(left(btrim(coalesce(p ->> 'watermark', '')), 120), ''), exp, p ->> 'drive_file', p ->> 'permission_id', p ->> 'url');
+          nullif(left(btrim(coalesce(p ->> 'watermark', '')), 120), ''), exp, p ->> 'drive_file', p ->> 'permission_id', p ->> 'url',
+          ids, public.kh_share_is_vault(cid, did, ids));
   insert into public.kh_audit (action, document_id, details)
   values ('share', did, jsonb_build_object('share_id', sid, 'collection_id', cid, 'expires_at', exp));
   return jsonb_build_object('id', sid, 'expires_at', exp);
@@ -2211,20 +2275,22 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
--- for the app that tidies the copies in Drive: the state of links by id, the closed vault's included
--- ('live', 'expired', 'revoked' or 'gone' when the link no longer exists: its dossier or document was deleted)
+-- for the app that tidies the copies in Drive: the state of links by id, the closed vault's included:
+-- 'live', 'expired', 'revoked', or 'deleted' (its dossier or document was deleted). One database for
+-- every device here, so a link it does not have was deleted; device mode answers 'unknown' instead
+-- when nothing says so (supabase/local-sync.sql): another device may have made it.
 create or replace function public.kh_shares_state(p jsonb) returns jsonb
 language sql stable security definer set search_path = public, extensions as $$
-  select coalesce(jsonb_object_agg(x, coalesce((select case when s.revoked then 'revoked' when s.expires_at <= now() then 'expired' else 'live' end
-      from public.kh_share_links s where s.id = public.kh_uuid(x) and s.owner_id = auth.uid()), 'gone')), '{}'::jsonb)
-  from jsonb_array_elements_text(public.kh_arr(p -> 'ids')) x
+  select coalesce(jsonb_object_agg(sid, coalesce((select case when s.revoked then 'revoked' when s.expires_at <= now() then 'expired' else 'live' end
+      from public.kh_share_links s where s.id = public.kh_uuid(sid) and s.owner_id = auth.uid()), 'deleted')), '{}'::jsonb)
+  from jsonb_array_elements_text(public.kh_arr(p -> 'ids')) as k(sid)
 $$;
 
 -- every link (p.open: only those not taken back; p.collection_id / p.document_id: of one dossier / document)
 create or replace function public.kh_shares_list(p jsonb default '{}') returns jsonb
 language sql stable set search_path = public, extensions as $$
   select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'url', s.url, 'label', s.label, 'watermark', s.watermark, 'expires_at', s.expires_at,
-      'revoked', s.revoked, 'expired', s.expires_at <= now(), 'created_at', s.created_at, 'drive_file', s.drive_file,
+      'revoked', s.revoked, 'expired', s.expires_at <= now(), 'created_at', s.created_at, 'drive_file', s.drive_file, 'vault', s.vault,
       'collection_id', s.collection_id, 'document_id', s.document_id, 'name', coalesce(c.name, d.title_ar, d.title, d.file_name))
       order by s.revoked, s.expires_at), '[]'::jsonb)
   from public.kh_share_links s

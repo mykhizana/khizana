@@ -345,8 +345,10 @@ export default function SearchPage() {
                     icon={Trash2}
                     className="text-danger"
                     onClick={async () => {
-                      await api.deleteDocs([...selected])
-                      toast.success('نُقلت إلى سلة المحذوفات (تُسترجع خلال 30 يوماً)')
+                      const r = await api.deleteDocs([...selected])
+                      // their share links were taken back with them: the copies leave Drive now if Google is connected
+                      if (r?.links) void import('@/lib/shares').then(({ shares }) => shares.sweep(true))
+                      toast.success(`نُقلت إلى سلة المحذوفات (تُسترجع خلال 30 يوماً)${r?.links ? '، وسُحبت روابط مشاركتها' : ''}`)
                       setSelected(new Set())
                       void qc.invalidateQueries()
                     }}

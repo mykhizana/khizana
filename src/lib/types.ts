@@ -117,6 +117,8 @@ export type ShareLink = {
   collection_id?: string | null
   document_id?: string | null
   name?: string | null
+  /** its PDF holds vault papers (hidden while the vault is closed) */
+  vault?: boolean
 }
 export type Dossier = { id: string; name: string; notes: string | null; created_at: string; items: DossierItem[]; hidden: number; plan: DossierPlan | null; shares: ShareLink[] }
 

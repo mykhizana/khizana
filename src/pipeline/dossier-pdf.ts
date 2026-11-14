@@ -4,7 +4,7 @@
 // one procedure cannot serve another. Everything happens on this device; nothing is sent anywhere.
 import { api } from '@/db/api'
 import { files } from '@/db/files'
-import { jpegPdf } from '@/drive/pdf'
+import { jpegInfo, jpegPdf } from '@/drive/pdf'
 import { docTitle, docsAr, fmtDate, pagesAr } from '@/lib/format'
 import { typeLabel } from '@/lib/labels'
 import type { Doc } from '@/lib/types'
@@ -147,66 +147,74 @@ function textSheets(title: string, texts: string[]): HTMLCanvasElement[] {
   return out
 }
 
-/** the pages of one document as JPEG bytes, in order */
+/** a file the document has but this device cannot read now (kept only in Drive, Google not connected…) */
+export class MissingFile extends Error {}
+
+/**
+ * The pages of one document as JPEG bytes, in order — all of them or an error, never a part: a dossier
+ * handed over must not lose a page nor swap a scan for its typed text without saying so.
+ */
 async function docPages(d: Doc, watermark: string | null, progress: (i: number, n: number) => void): Promise<Uint8Array[]> {
   const out: Uint8Array[] = []
+  const title = docTitle(d)
   const finish = async (c: HTMLCanvasElement) => {
     if (watermark) stamp(c, watermark)
     out.push(await jpegBytes(c))
   }
   const orig = d.files.find((f) => f.role === 'original')
   const name = orig?.name ?? d.file_name ?? ''
+  const pics = d.files.filter((f) => f.role === 'page').sort((a, b) => (a.page_no ?? 0) - (b.page_no ?? 0))
 
   // 1. a PDF original: every page rendered (born-digital or scanned)
   if (orig && (orig.mime === 'application/pdf' || /\.pdf$/i.test(name))) {
     const blob = await files.get(orig.path)
-    if (blob) {
-      const { openPdf, renderPage, closePdf } = await import('@/prep/pdf')
-      let pdf = null
-      try {
-        pdf = await openPdf(new Uint8Array(await blob.arrayBuffer()))
-        for (let i = 1; i <= pdf.numPages; i++) {
-          progress(i, pdf.numPages)
-          await finish(await renderPage(pdf, i, EDGE))
-        }
-        return out
-      } catch {
-        out.length = 0 // a locked or broken PDF: the page pictures below
-      } finally {
-        await closePdf(pdf)
+    if (!blob) throw new MissingFile(title)
+    const { openPdf, renderPage, closePdf } = await import('@/prep/pdf')
+    let pdf = null
+    try {
+      pdf = await openPdf(new Uint8Array(await blob.arrayBuffer()))
+      for (let i = 1; i <= pdf.numPages; i++) {
+        progress(i, pdf.numPages)
+        await finish(await renderPage(pdf, i, EDGE))
       }
+      return out
+    } catch (e) {
+      if (e instanceof MissingFile) throw e
+      out.length = 0 // a locked or broken PDF: its page pictures, when it has them
+      if (!pics.length) throw new Error(`تعذّرت قراءة ملف PDF «${title}» (محمي بكلمة سر أو تالف)`)
+    } finally {
+      await closePdf(pdf)
     }
   }
 
-  // 2. the page pictures (scans, photos): the JPEG as it is when nothing is drawn on it
-  const pics = d.files.filter((f) => f.role === 'page').sort((a, b) => (a.page_no ?? 0) - (b.page_no ?? 0))
+  // 2. the page pictures (scans, photos), every one of them: the JPEG as it is when nothing is drawn on it
   if (pics.length) {
     for (let i = 0; i < pics.length; i++) {
       progress(i + 1, pics.length)
       const blob = await files.get(pics[i].path)
-      if (!blob) continue
+      if (!blob) throw new MissingFile(title)
       const bytes = new Uint8Array(await blob.arrayBuffer())
-      if (!watermark && isJpeg(bytes)) out.push(bytes)
+      // (a picture the PDF writer could not read would vanish from the file and shift the page numbers)
+      if (!watermark && isJpeg(bytes) && jpegInfo(bytes)) out.push(bytes)
       else await finish(onWhite(await decodeImage(blob)))
     }
-    if (out.length) return out
+    return out
   }
 
   // 3. a picture original without page pictures
   if (orig && (orig.mime ?? '').startsWith('image/')) {
     const blob = await files.get(orig.path)
-    if (blob) {
-      try {
-        await finish(onWhite(await decodeImage(blob)))
-        return out
-      } catch {
-        /* undecodable (HEIC on some browsers): its text below */
-      }
+    if (!blob) throw new MissingFile(title)
+    try {
+      await finish(onWhite(await decodeImage(blob)))
+    } catch {
+      throw new Error(`تعذّر فتح صورة «${title}» على هذا الجهاز (صيغة لا يقرؤها المتصفح)`)
     }
+    return out
   }
 
-  // 4. its text
-  for (const c of textSheets(docTitle(d), (d.pages ?? []).map((p) => p.text ?? ''))) await finish(c)
+  // 4. a document with no picture at all (Word, text): its text laid out on A4 sheets
+  for (const c of textSheets(title, (d.pages ?? []).map((p) => p.text ?? ''))) await finish(c)
   return out
 }
 
@@ -308,6 +316,8 @@ export async function buildPdf(entries: PdfEntry[], o: BuildOptions): Promise<Bu
   const bodies: Uint8Array[] = []
   const lines: CoverLine[] = []
   const missing: string[] = []
+  const away: string[] = []
+  const broken: string[] = []
   const first = o.cover === false ? 1 : 2
   for (let k = 0; k < entries.length; k++) {
     const e = entries[k]
@@ -317,7 +327,14 @@ export async function buildPdf(entries: PdfEntry[], o: BuildOptions): Promise<Bu
       continue
     }
     const title = docTitle(d)
-    const pages = await docPages(d, wm, (i, n) => say(`«${title.slice(0, 40)}» — الصفحة ${i}/${n}`, (k + i / Math.max(n, 1)) / entries.length))
+    let pages: Uint8Array[]
+    try {
+      pages = await docPages(d, wm, (i, n) => say(`«${title.slice(0, 40)}» — الصفحة ${i}/${n}`, (k + i / Math.max(n, 1)) / entries.length))
+    } catch (err) {
+      if (err instanceof MissingFile) away.push(title)
+      else broken.push((err as Error).message)
+      continue
+    }
     if (!pages.length) {
       missing.push(e.requirement || title)
       continue
@@ -325,6 +342,12 @@ export async function buildPdf(entries: PdfEntry[], o: BuildOptions): Promise<Bu
     lines.push({ n: lines.length + 1, requirement: e.requirement ?? null, title, kind: typeLabel(d.doc_type), pages: pages.length, first: first + bodies.length })
     bodies.push(...pages)
   }
+  // no PDF with a part missing: the owner is told what and why
+  if (away.length)
+    throw new Error(
+      `صفحات ${away.length === 1 ? 'هذه الوثيقة' : 'هذه الوثائق'} ليست على هذا الجهاز ولم تُجلب من Google Drive: ${away.map((t) => `«${t}»`).join('، ')}. اتصل بـ Google ثم أعد المحاولة (أو انتظر حتى يرفعها الجهاز الذي أضافها).`,
+    )
+  if (broken.length) throw new Error(broken.join(' — '))
   if (!bodies.length) throw new Error('لا صفحة يمكن وضعها في الملف: الوثائق غير موجودة على هذا الجهاز أو في الخزنة المقفلة')
   say('تجميع الملف', 1)
   const all = o.cover === false ? bodies : [await jpegBytes(coverSheet({ title: o.title, subtitle: o.subtitle, watermark: wm, lines, total: bodies.length + 1 }), 0.9), ...bodies]
